@@ -279,6 +279,24 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   (no rex_crash.log: not the SDK's abort); opt2 and opt3 passed the same point: not reproduced, watch it. Test runs
   now send an earlier run's rex_crash.log at start (`rex_crash_previous.log`).
 
+- **Codegen step 2 and the missing compile flags (2026-10-25, opt4-opt6)**: sa2-nx's post-codegen steps ported:
+  `tools/pch_no_volatile.py` (guest memory without volatile), `tools/loop_barriers.py` (REQUIRED with it: 18,897 +
+  1,441 loop headers), `tools/direct_calls.py` (rewritten for Naruto: 76,031 + 106,358 calls made direct; hooked =
+  every 82/88xxxxxx address in the sources, 522). `tools/codegen.sh` runs the generator (stamps removed first: it
+  skips unchanged trees and kept post-processed files) and `tools/post_codegen.sh`. opt4 (all three) died at 3 s:
+  sub_82188C88 (the heap's free) got 0xFFFFFFFF. Cause: the generated code was compiled WITHOUT `-fno-strict-aliasing`
+  and `-ffp-contract=off` (sa2-nx sets them on every target with generated code; the SDK's directory flags do not
+  reach it), so GCC reordered guest accesses of different types once they were not volatile, and fused fmul/fadd into
+  FMA in every build so far (results drift from the 360). Both flags now on naruto, naruto_recomp, naruto_AI2C.
+  Direct calls alone (opt5, volatile kept): no gain without LTO. All three with the flags (opt6): game thread in
+  fights ~21.5 -> ~17.5 ms a frame (classic ~23.4: -25 %), NRO 44 MB, frames right, no crash.
+  `tools/find_self_loops.py` (llvm-nm): 4 branch-to-self in recompiled code, all the game's own `b .` (error hangs).
+- **Console crash reports (2026-10-25)**: Atmosphere's reports over the console's FTP (user's ftpd, port 5000): the
+  "std::abort (0xFFE)" panic and a crash at 22:36 were `ovlloader` (Tesla's overlay loader), not the game; the game's
+  own "closed because an error occurred" were hbloader User Breaks (abort) at the ends of runs (22:52, 23:10, 23:16,
+  00:02): a crash at exit, not decoded (those ELFs were overwritten). `nxtest.sh` now keeps each run's ELF and
+  `tools/switch/nx_crashes.py` fetches the run's reports and names the game's addresses (needs the FTP server on).
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
@@ -316,3 +334,5 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 | 2026-10-24 | prof4: + `sa2::enh::Resolve()` | 1020 / 460.8 / 1600 (handheld) | fight vs Sasuke | 30-42 FPS, most 40-147 ms | 0-0.4 ms paced | 9-16 ms | 18-32 ms |
 | 2026-10-24 | gpu768: as prof4 | 1020 / 768 / 1600 (set by hand) | fight vs Sasuke | 34-39 FPS | 26-30 ms Swap to Swap, 87 % CPU | 14-18 ms | 14-21 ms |
 | 2026-10-24 | lto768: + LTO | 1020 / 768 / 1600 | fight vs Sasuke | 33-39 FPS | 25-30 ms, 87 % CPU | 13-18 ms | 15-21 ms |
+| 2026-10-25 | opt3: codegen step 1 | 1020 / 460.8 / 1600 | fight vs Sasuke | 31-42 FPS | ~21.5 ms CPU a frame | 8-17 ms | 21-31 ms |
+| 2026-10-25 | opt6: + step 2, -fno-strict-aliasing, -ffp-contract=off | 1020 / 460.8 / 1600 | fight vs Sasuke | 31-45 FPS | ~17.5 ms CPU a frame | | |

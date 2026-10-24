@@ -49,6 +49,20 @@ if(NARUTO_RENUT_RENDERER)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/naruto_renut_gpu.cmake")
 endif()
 
+# From sa2-nx: the SDK compiles itself with these (directory scope), but they do not reach the generated game code,
+# built in this directory. GCC's default for GNU C++ is -ffp-contract=fast: it fuses the guest's separate fmul/fadd
+# into FMA and results drift from the Xbox 360; strict aliasing is unsafe for recompiled code (guest memory written
+# and read through different types: with guest loads that are not volatile, GCC reordered them and freed a garbage
+# pointer, 2026-10-25). Every target that holds generated code: the executable, naruto_recomp and the AI2C module.
+# Clang (the PC build) gets them too, so the PC rounds exactly like the console.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    foreach(target naruto naruto_recomp naruto_AI2C)
+        if(TARGET ${target})
+            target_compile_options(${target} PRIVATE -ffp-contract=off -fno-strict-aliasing)
+        endif()
+    endforeach()
+endif()
+
 if(REXGLUE_PLATFORM_SWITCH)
     # An emulator (Ryujinx) starts NROs without argv[0]: the SDK then uses this path for the NRO's folder.
     if(TARGET rexcore)

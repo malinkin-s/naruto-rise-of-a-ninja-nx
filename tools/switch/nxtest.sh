@@ -23,6 +23,9 @@ name=$1; secs=$2; script=$3; shift 3 2>/dev/null || shift $#
 port=${NX_LOG_PORT:-28780}
 host=$(ip -4 route get "$NX_IP" | grep -oP 'src \K\S+')
 dir="$root/out/runs/$name"; rm -rf "$dir"; mkdir -p "$dir"
+# The run's ELF, for the console's crash reports (addresses "naruto + 0x..."): a later build would not match them.
+cp "$root/out/nx/naruto" "$dir/naruto.elf"
+started=$(date +%s)
 args=(--log_network="$host:$port" --test_exit_after_s="$secs")
 # NX_SHOTS="20 40 60": frames of the renderer at those seconds, sent with the log (default: every 20 s).
 shots=${NX_SHOTS:-$(seq -s ' ' 20 20 $((secs - 5)))}
@@ -131,6 +134,10 @@ docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$root
   || { kill $listener 2>/dev/null; echo "nxlink failed: is hbmenu in netloader mode (Y)?"; exit 1; }
 
 wait $listener || true
+# Atmosphere's crash reports written since the start (the console's FTP server, NX_FTP_PORT, default 5000), with the
+# game's addresses named from the run's ELF.
+python3 -I "$root/tools/switch/nx_crashes.py" "$NX_IP" "$((started - 5))" "$dir" "$dir/naruto.elf" \
+  --port "${NX_FTP_PORT:-5000}" || true
 if ls "$dir"/shot_*.png >/dev/null 2>&1; then
   magick montage "$dir"/shot_*.png -tile 4x -geometry 400x+3+3 "$dir/sheet.jpg" && echo "== frames: $dir/sheet.jpg"
 fi
