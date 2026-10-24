@@ -32,7 +32,7 @@ From `x360-switch-ports/skill/templates/port-journal.md`. The place to think, no
 ## Current stage
 
 Stage: 6 early (the user's priority: the console first), with 3 done on the PC: menus, story, gameplay, a fight, saves.
-First NRO without a renderer built; next: boot it on the console (logs, audio, no picture), then Renut on deko3d.
+The NRO without a renderer boots and runs on the console (automated over nxlink); next: Renut on deko3d.
 Goal: codegen clean for `default.xex` + `ai2c.dll`, the missed-code sweep (SOL-CODE-1) done, every manifest fix with
 evidence: done 2026-10-24. Stage 3 goal: boot, menus, gameplay, cutscenes, saves on the PC (SOL-ROUTE-2). Next: input
 scripted input (SOL-TEST-2) done; next: play to the first real autosave and load it, a mission, a long session.
@@ -177,6 +177,17 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   the title hangs; checked on the PC: "Window closing ... Title terminated" at 20 s) and the optional input script. A
   Python listener writes `out/runs/NAME/nx.log`; the script ends with an error summary. Needs: hbmenu with title
   override + Y, the game already on the SD, TCP 28780 open on the PC (ufw).
+
+- **First console boot (2026-10-24, boot3)**, no renderer, `nxtest.sh boot3 120`: 2 minutes, then `test_exit_after_s`
+  closed it cleanly ("Window closing ... Title terminated"). Horizon layer, threads (19 host stacks, no creation
+  failure), `audout 48000 Hz, 2 channels`, files from the SD (slow reads 8-13 ms per 160 KB of Naruto.SRA: the pack of
+  SOL-PLAT-7 later), saves under `sdmc:/switch/naruto-nx/naruto/`, and AI2C linked into the NRO: `Module 'ai2c.dll'
+  registered 6343 functions`. Same as the PC without a GPU plugin. boot2 had been closed by the user at 11 s (black
+  screen looked hung): not a crash.
+  - nxlink details: `-p naruto-nx/naruto.nro` (hbmenu's netloader puts /switch/ in front; `switch/...` gave "open:
+    err=2"), program arguments after `--` (else nxlink's getopt takes them), the netloader does not reopen after the
+    game exits, and a TCP probe of 28280 uses it up: `tools/switch/nx_wait.py` waits for it by UDP ("nxboot" ->
+    "bootnx", sent from port 28771 so ufw lets the answer in).
 
 ## Open questions and hypotheses
 

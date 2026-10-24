@@ -6,6 +6,8 @@
 # NX_IP may also be set in tools/switch/nx.env (NX_IP=..., not committed).
 #
 # On the console: hbmenu started with title override (hold R while starting a game: full memory), then Y (netloader).
+# The script waits for the netloader by itself (tools/switch/nx_wait.py, up to NX_WAIT seconds, default 900): after a
+# run, just open the netloader again. hbmenu does not go back to it when the game exits.
 # The game files must already be on the SD (tools/switch/package.sh, sdmc:/switch/naruto-nx/game).
 # The NRO is written to sdmc:/switch/naruto-nx/naruto.nro (nxlink -p naruto-nx/naruto.nro: hbmenu's netloader puts
 # /switch/ in front itself) and started with:
@@ -54,6 +56,9 @@ print("log listener: done")
 PY
 listener=$!
 sleep 1
+
+# Wait for hbmenu's netloader (UDP ping, does not use it up): the user just opens it after each run.
+python3 -I "$root/tools/switch/nx_wait.py" "$NX_IP" "${NX_WAIT:-900}" || { kill $listener 2>/dev/null; exit 1; }
 
 docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$root:$root" -w "$root" naruto-nx/devkita64 \
   /opt/devkitpro/tools/bin/nxlink -a "$NX_IP" -p naruto-nx/naruto.nro out/nx/naruto.nro -- "${args[@]}" \
