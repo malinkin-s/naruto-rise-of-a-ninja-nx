@@ -7,10 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="status" src="docs/media/badge_status.svg" height="32">&nbsp;
-  <img alt="platform" src="docs/media/badge_platform.svg" height="32">&nbsp;
-  <img alt="renderer" src="docs/media/badge_renderer.svg" height="32">&nbsp;
-  <img alt="licence" src="docs/media/badge_licence.svg" height="32">
+  <img alt="status, platform, renderer, license" src="docs/media/badges.svg">
 </p>
 
 A Nintendo Switch (homebrew NRO) port of **Naruto: Rise of a Ninja** (Ubisoft Montreal, 2007, Xbox 360 exclusive).
@@ -130,7 +127,7 @@ Naruto: Rise of a Ninja.
 - Renut by masterspike52; plume; XenosRecomp; uam; deko3d and libnx by the devkitPro and switchbrew teams.
 - The [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk).
 
-## Licence and disclaimer
+## License and disclaimer
 
 GPL-3.0, see [LICENSE](LICENSE). This is a fan project, not affiliated with or endorsed by Ubisoft, Bandai Namco,
 Shueisha, Microsoft or Nintendo. *Naruto* and the game's assets belong to their owners. No game files are

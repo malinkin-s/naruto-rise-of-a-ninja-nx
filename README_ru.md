@@ -7,10 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="состояние" src="docs/media/badge_status_ru.svg" height="32">&nbsp;
-  <img alt="платформа" src="docs/media/badge_platform_ru.svg" height="32">&nbsp;
-  <img alt="рендерер" src="docs/media/badge_renderer_ru.svg" height="32">&nbsp;
-  <img alt="лицензия" src="docs/media/badge_licence_ru.svg" height="32">
+  <img alt="состояние, платформа, рендерер, лицензия" src="docs/media/badges_ru.svg">
 </p>
 
 Порт **Naruto: Rise of a Ninja** (Ubisoft Montreal, 2007, эксклюзив Xbox 360) на Nintendo Switch в виде homebrew NRO.

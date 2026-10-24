@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="161" height="32" role="img" aria-label="licence: GPL-3.0">
-  <title>licence: GPL-3.0</title>
-  <rect width="77" height="32" fill="#1C2024"/>
-  <rect x="77" width="84" height="32" fill="#C2AC63"/>
-  <g font-family="'IBM Plex Sans','Segoe UI',Helvetica,Arial,sans-serif" font-size="16">
-    <text x="12" y="21.6" fill="#E6E1D3" textLength="53" lengthAdjust="spacingAndGlyphs">licence</text>
-    <text x="89" y="21.6" fill="#14171A" font-weight="700" textLength="60" lengthAdjust="spacingAndGlyphs">GPL-3.0</text>
-  </g>
-</svg>

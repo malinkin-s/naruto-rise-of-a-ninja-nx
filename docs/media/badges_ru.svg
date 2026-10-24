@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="845" height="74" viewBox="0 0 845 74" role="img" aria-label="состояние: работает на Switch · меню и бои · медленно · платформа: Nintendo Switch (homebrew) · рендерер: Renut · deko3d · лицензия: GPL-3.0">
+  <title>состояние: работает на Switch · меню и бои · медленно · платформа: Nintendo Switch (homebrew) · рендерер: Renut · deko3d · лицензия: GPL-3.0</title>
+  <g font-family="'IBM Plex Sans','Segoe UI',Helvetica,Arial,sans-serif" font-size="16">
+  <rect x="0.0" y="0" width="109" height="32" fill="#1C2024"/>
+  <rect x="109.0" y="0" width="736.0" height="32" fill="#5CA382"/>
+  <text x="14.0" y="21.6" fill="#E6E1D3" textLength="81" lengthAdjust="spacingAndGlyphs">состояние</text>
+  <text x="477.0" y="21.6" fill="#14171A" font-weight="700" text-anchor="middle" textLength="363" lengthAdjust="spacingAndGlyphs">работает на Switch · меню и бои · медленно</text>
+  <rect x="0.0" y="42" width="117" height="32" fill="#1C2024"/>
+  <rect x="117.0" y="42" width="262.0" height="32" fill="#7FA0B4"/>
+  <text x="14.0" y="63.6" fill="#E6E1D3" textLength="89" lengthAdjust="spacingAndGlyphs">платформа</text>
+  <text x="248.0" y="63.6" fill="#14171A" font-weight="700" text-anchor="middle" textLength="234" lengthAdjust="spacingAndGlyphs">Nintendo Switch (homebrew)</text>
+  <rect x="389.0" y="42" width="105" height="32" fill="#1C2024"/>
+  <rect x="494.0" y="42" width="149.0" height="32" fill="#7FA0B4"/>
+  <text x="403.0" y="63.6" fill="#E6E1D3" textLength="77" lengthAdjust="spacingAndGlyphs">рендерер</text>
+  <text x="568.5" y="63.6" fill="#14171A" font-weight="700" text-anchor="middle" textLength="121" lengthAdjust="spacingAndGlyphs">Renut · deko3d</text>
+  <rect x="653.0" y="42" width="104" height="32" fill="#1C2024"/>
+  <rect x="757.0" y="42" width="88.0" height="32" fill="#C2AC63"/>
+  <text x="667.0" y="63.6" fill="#E6E1D3" textLength="76" lengthAdjust="spacingAndGlyphs">лицензия</text>
+  <text x="801.0" y="63.6" fill="#14171A" font-weight="700" text-anchor="middle" textLength="60" lengthAdjust="spacingAndGlyphs">GPL-3.0</text>
+  </g>
+</svg>
