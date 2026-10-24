@@ -49,7 +49,7 @@ REXCVAR_DEFINE_BOOL(sa2_renut_capture_batches, true, "SA2/Renderer",
 REXCVAR_DEFINE_BOOL(sa2_renut_snapshot_deltas_narrow, true, "SA2/Renderer",
                     "Renut's renderer (sa2_renut_snapshot_deltas): the game thread compares only the device chunks the "
                     "render thread reads (40 of 77: not the dirty masks, ring pointers and call tables before the fetch "
-                    "constants, nor the private words from 11008 to 12223, which only the hooks use on the live "
+                    "constants, nor the private words from 10880 to 11775 (Naruto; SA2 11008-12223), which only the hooks use on the live "
                     "device). The second console run: comparing all 77 was 9 % of the game thread. Off: all 77")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(sa2_renut_deferred_chain, true, "SA2/Renderer",

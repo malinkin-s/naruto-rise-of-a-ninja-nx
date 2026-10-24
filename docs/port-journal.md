@@ -211,6 +211,20 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
     own 30 fps through Renut's pacing (PresentationInterval at +13580). Frames come from the renderer
     (`tools/pc/frames.sh`), not from the screen.
 
+- **Renut draws the title screen (2026-10-24, PC)**: bisected with `naruto_debug_clear_color` (red clears) and
+  `naruto_debug_present` (present any texture): the present path worked, the draws left nothing; Vulkan validation
+  clean for them; the composite's VS gets the right constants (identity) from the device. Turning Renut's
+  optimisations off one by one: `sa2_renut_chain_reuse` (and so `sa2_renut_snapshot_deltas`) broke it; its verifier
+  (`sa2_renut_chain_reuse_verify`) said "the reused targets differ": render/draw.cpp tested SA2's private byte ranges
+  for "targets unchanged" (12816-12835) and "textures unchanged" (12920-13023). Now from the layout constants
+  (Naruto 12432-12451, 12536-12639): the title screen renders correctly with every optimisation on. Gamma ramp
+  retargeted to Naruto's +14988.
+  - Test runs: the window goes to Hyprland workspace 2 (user's request; `tools/pc/launch.sh`, a runtime
+    `hl.window_rule` through `hyprctl eval`: Hyprland 0.56 takes Lua, `hyprctl dispatch exec "[rules]"` no longer
+    parses), core dumps off, frames from the renderer. Two Hyprland crashes during the runs were the desktop's
+    (the user's diagnosis: /dev/shm exhausted by other software, an NVIDIA EGL readback crash), and so was the
+    game's SIGBUS (guest memory pages failing while RAM was short): check `free` and `df /dev/shm` before runs.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |

@@ -664,12 +664,14 @@ void NarutoClearF(PPCContext &ctx, uint8_t *base) {
   float color[4] = {0, 0, 0, 0};
   if (color_va)
     ReadVector4(color_va, color);
+  u32 clear_flags = flags;
   if (REXCVAR_GET(naruto_debug_clear_color)) {  // bisect: red clears show whether the present path carries anything
+    clear_flags |= 0xF;  // every clear clears the colour targets too
     color[0] = 1.0f;
     color[1] = color[2] = 0.0f;
     color[3] = 1.0f;
   }
-  QueueHostClear(device, flags, has_rect ? &rect : nullptr, color, float(ctx.f1.f64), ctx.r8.u32);
+  QueueHostClear(device, clear_flags, has_rect ? &rect : nullptr, color, float(ctx.f1.f64), ctx.r8.u32);
   __imp__sub_82131018(ctx, base);
 }
 
@@ -711,6 +713,7 @@ BANJO_RENUT_HOOK_RAW(sub_821398C8) {  // D3DDevice_Resolve
 // (D3DPT_TRIANGLEFAN, 4 vertices, stride 20); the title then writes the vertices and ends with the inline EndVertices
 // (m_pRing = device + 13428, kDeviceOffsetVerticesRingEnd).
 void NarutoNoteDeclaration(u32 declaration_va);  // shader.cpp
+uint64_t NarutoHashShaderNow(u32 shader_va, bool pixel);  // shader.cpp
 
 namespace {
 std::atomic<uint32_t> g_naruto_draw_calls[3];
@@ -719,9 +722,26 @@ void NoteBoundDeclaration(u32 device) {
 }
 void NoteNarutoDraw(int kind, const PPCContext &ctx) {
   static const char *const kNames[] = {"DrawIndexedVertices", "DrawVertices", "BeginVertices"};
-  if (const uint32_t n = g_naruto_draw_calls[kind].fetch_add(1) + 1; n <= 3 || (n & (n - 1)) == 0)
-    RGPU_INFO("[naruto] {} #{}: r4 {} r5 {} r6 {} r7 {}", kNames[kind], n, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32,
-              ctx.r7.u32);
+  const uint32_t n = g_naruto_draw_calls[kind].fetch_add(1) + 1;
+  if (n <= 3 || (n & (n - 1)) == 0)
+    RGPU_INFO("[naruto] {} #{}: r4 {} r5 {} r6 {} r7 {}; predication {:08X} {:08X} {:08X} tile predication {:08X} "
+              "flags {:08X}", kNames[kind], n, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32,
+              LoadU32(ctx.r3.u32 + native::off::Predication), LoadU32(ctx.r3.u32 + native::off::RunPredicationState),
+              LoadU32(ctx.r3.u32 + native::off::PredicationSet), LoadU32(ctx.r3.u32 + native::off::TilePredication),
+              LoadU32(ctx.r3.u32 + native::off::Flags));
+  if (n <= 3) {
+    const u32 vs = LoadU32(ctx.r3.u32 + d3d::kDeviceOffsetVertexShader), ps = LoadU32(ctx.r3.u32 + d3d::kDeviceOffsetPixelShader);
+    RGPU_INFO("[naruto]   bound vs {:08X} hash now {:016X}, ps {:08X} hash now {:016X}", vs, NarutoHashShaderNow(vs, false),
+              ps, NarutoHashShaderNow(ps, true));
+    std::string c;
+    for (u32 i = 0; i < 16; ++i) {
+      const u32 bits = LoadU32(ctx.r3.u32 + 0x780 + 4 * i);
+      float v;
+      std::memcpy(&v, &bits, 4);
+      c += fmt::format("{} ", v);
+    }
+    RGPU_INFO("[naruto]   device VS constants c0-c3: {}", c);
+  }
 }
 }  // namespace
 BANJO_RENUT_HOOK_RAW(sub_82137E00) {

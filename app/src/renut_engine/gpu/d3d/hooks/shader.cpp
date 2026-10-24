@@ -556,3 +556,23 @@ void NarutoNoteDeclaration(u32 declaration_va) {
   copy[count].Type = kDeclTypeUnused;
   RegisterGuestDeclaration(declaration_va, copy);
 }
+
+// naruto-nx (2026-10-24, temporary diagnostic): the bound vertex shader's container hashed from guest memory now,
+// to see whether Naruto's D3D patches the microcode after creation (its fetches, by the declaration).
+uint64_t NarutoHashShaderNow(u32 shader_va, bool pixel) {
+  if (!shader_va)
+    return 0;
+  const u32 container_va = shader_va + (pixel ? kPixelShaderContainer : kVertexShaderContainer);
+  const auto *header = GuestPtr<const d3d::ShaderContainer>(container_va);
+  const u32 physical_va = *GuestPtr<const be_u32>(shader_va + (pixel ? 0x18u : 0x20u));
+  const u8 *physical = physical_va < 0x20000000u ? GuestPhysicalPtr<const u8>(physical_va) : GuestPtr<const u8>(physical_va);
+  if (!header || !physical)
+    return 0;
+  const u32 virtual_size = header->virtualSize, physical_size = header->physicalSize;
+  if (virtual_size > 0x10000 || physical_size > 0x100000)
+    return 0;
+  std::vector<uint8_t> container(size_t(virtual_size) + physical_size);
+  std::memcpy(container.data(), header, virtual_size);
+  std::memcpy(container.data() + virtual_size, physical, physical_size);
+  return HashShaderContainer(container.data());
+}

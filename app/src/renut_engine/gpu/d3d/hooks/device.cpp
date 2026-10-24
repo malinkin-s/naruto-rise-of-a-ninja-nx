@@ -867,7 +867,7 @@ void D3DDevice_RunCommandBuffer_hook(u32 device_va, u32 command_buffer,
 // The frame goes to the render thread, which presents it; the game thread
 // goes on with the next one, waiting only when it is more than
 // render_thread::kMaxFramesAhead ahead.
-constexpr u32 kSa2DeviceOffsetGammaRamp = 15408;  // sa2-nx: SA2's +0x3A9C (the +404 block)
+constexpr u32 kSa2DeviceOffsetGammaRamp = 14988;  // naruto-nx: Naruto's ramp, 768 words (PC base frame.cpp reads +14988); SA2 15408
 
 // sa2-nx (2026-10-20): the SDK's core layout (system/xthread.cpp).
 REXCVAR_DEFINE_BOOL(sa2_renut_core_layout, true, "SA2/Renderer",

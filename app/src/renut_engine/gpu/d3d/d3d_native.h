@@ -141,9 +141,9 @@ constexpr u32 ScissorRect = 12668;         // SetScissorRect's RECT [0x3184] (SA
 constexpr u32 IndexBuffer = 12428;         // [0x3094]  // Naruto: PC base draw.cpp "indices: header at +12428" (N&B -8)
 constexpr u32 RenderTargets = 12432;       // [4] [0x3098]  // Naruto: PC base pass.cpp +12432 + 4i (N&B -8)
 constexpr u32 DepthStencil = 12448;        // [0x30A8]  // Naruto: PC base pass.cpp +12448 (N&B -8)
-constexpr u32 StreamSources = 12452;       // [16] [0x30AC]  // x
+constexpr u32 StreamSources = 12452;       // [16] [0x30AC]  // Naruto: N&B -8, UNVERIFIED
 constexpr u32 StreamStrides = 12520;       // u8[16], stride / 4 [0x30F0]  // Naruto: PC base vertex_layout.cpp strides at +12520 (N&B -8)
-constexpr u32 Textures = 12536;            // [26] [0x3100]  // x
+constexpr u32 Textures = 12536;            // [26] [0x3100]  // Naruto: N&B -8, UNVERIFIED
 constexpr u32 Predication = 12700;         // tile predication of the next draws, ~0 none [0x31A4] +376  // Naruto: PC base pass.cpp writes ~0 to +12700 (N&B -8)
 constexpr u32 RunPredicationState = 12704; // [0x31A8] +376  // Naruto: PC base pass.cpp +12704 (N&B -8)
 constexpr u32 PredicationSet = 12708;      // 1 while SetPredication's mask is non-zero [0x31AC] +376  // Naruto: PC base pass.cpp +12708 (N&B -8)
@@ -152,10 +152,10 @@ constexpr u32 TileCount = 12740;           // [0x31CC] +376  // Naruto: PC base 
 constexpr u32 TileRects = 12744;           // D3DRECT[TileCount] [0x31D0] +376  // Naruto: PC base pass.cpp +12744 + 16i (N&B -8)
 constexpr u32 TileOrigins = 12984;         // per tile, x & ~31, y & ~31 [0x32C0] +376  // Naruto: PC base pass.cpp +12984 + 8i (N&B -8)
 constexpr u32 TilingExtent = 13172;        // widest and tallest tile edge [0x337C] +376  // Naruto: PC base pass.cpp max_x/max_y at +13172/+13176 (N&B -8)
-constexpr u32 CommandBuffer = 13508;       // the D3DCommandBuffer being recorded [0x34CC]  // x
+constexpr u32 CommandBuffer = 13508;       // the D3DCommandBuffer being recorded [0x34CC]  // Naruto: N&B -8, UNVERIFIED
 constexpr u32 SideBuffer = 16712;          // [0x4158]  // Naruto: 820E6B00 stores the side buffer there (N&B - 16)
-constexpr u32 AutoDepthStencil = 14816;    // InitializePresentationParameters' surfaces [0x39E8]  // x
-constexpr u32 AutoFrontBuffer = 14820;     // [0x39EC] (SA2's Present)  // x
+constexpr u32 AutoDepthStencil = 14816;    // InitializePresentationParameters' surfaces [0x39E8]  // Naruto: N&B -8, UNVERIFIED
+constexpr u32 AutoFrontBuffer = 14820;     // [0x39EC] (SA2's Present)  // Naruto: N&B -8, UNVERIFIED
 constexpr u32 AutoBackBuffer = 14824;      // [0x39F0] (SA2's Present)  // Naruto: N&B -8, UNVERIFIED
 }  // namespace off
 

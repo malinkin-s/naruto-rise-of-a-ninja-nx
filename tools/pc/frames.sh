@@ -1,5 +1,5 @@
 #!/bin/bash
-# A PC run whose frames come from the renderer itself (sa2_capture.cpp's recorder), not from the screen: nothing touches
+# A PC run (tools/pc/launch.sh: a window on workspace 2 by default) whose frames come from the renderer itself (sa2_capture.cpp's recorder), not from the screen: nothing touches
 # the compositor (grim once took the desktop, and a run with screen shots coincided with a Hyprland crash), works with
 # the window hidden or on another workspace.
 #   tools/pc/frames.sh NAME SECONDS START_S EVERY COUNT ['input script'] [extra flags...]
@@ -17,9 +17,9 @@ input=(); [ -n "$REPLAY" ] && input=(--input_replay="$REPLAY"); [ -z "$REPLAY" ]
 cd "$root/out/pc"
 rm -rf captures
 export LD_LIBRARY_PATH="$root/sdk/out/linux-amd64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-timeout "$secs" ./naruto --game_data_root="$root/game" $gpu --log_file="$dir/boot.log" --user_data_root="$dir/user" \
-  --sa2_video_s="$start" --sa2_video_every="$every" --sa2_video_frames="$count" --sa2_video_lockstep=false \
-  "${input[@]}" "$@" > "$dir/stdout.txt" 2>&1 || true
+"$root/tools/pc/launch.sh" "$secs" "$dir/stdout.txt" ./naruto --game_data_root="$root/game" $gpu --log_file="$dir/boot.log" \
+  --user_data_root="$dir/user" --sa2_video_s="$start" --sa2_video_every="$every" --sa2_video_frames="$count" \
+  --sa2_video_lockstep=false "${input[@]}" "$@" || true
 raw=$(ls captures/*.rgba 2>/dev/null | head -1)
 if [ -z "$raw" ]; then echo "no frames recorded"; else
   w=640; h=360  # half of the 1280x720 render; the .txt beside the video (written when it ends) wins
