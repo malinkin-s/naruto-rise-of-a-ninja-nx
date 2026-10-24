@@ -45,6 +45,12 @@ REXCVAR_DEFINE_STRING(renut_resolution, "720p", "Nuts&Bolts/Graphics",
 // never ran. The game's single-sample targets get this many samples on the host, as the native renderer's sa2_msaa did;
 // the game's resolves downsample them. Its 4x surfaces (Direct3D's fast Clear aliases) stay as they are.
 // sa2-nx (1.0.3.1, the user's call: 2x cost the console a little too much CPU): off by default again.
+// naruto-nx (2026-10-24): Naruto draws its 3D scene with 4x MSAA (tiled in EDRAM on the 360, nearly free there); the
+// host target with 4 samples made each blended layer cost 4x at the Switch's 460 MHz (handheld).
+REXCVAR_DEFINE_INT32(naruto_guest_msaa_max, 0, "SA2/Renderer",
+                     "Renut's renderer: at most this many samples for the game's multisampled render targets "
+                     "(1 = single-sampled, resolves become copies; 0 = as the game asks). Read at start")
+    .range(0, 4);
 REXCVAR_DEFINE_INT32(sa2_renut_msaa, 0, "SA2/Renderer",
                      "Renut's renderer: multisample anti-aliasing of the game's single-sample render targets: 0 = off "
                      "(the game's own, default), 2 = 2x, 4 = 4x, 8 = 8x. Smoother edges; each step costs more GPU and "
@@ -206,6 +212,8 @@ bool BuildTarget(HostSurface &surface, const d3d::SurfaceDesc &desc, uint32_t mi
   const uint32_t host_height = surface.scale.Size(surface.height);
   surface.depth = d3d::IsDepthFormat(surface.format_word);
   surface.samples = SampleCount(surface.info_word);
+  if (static const int32_t max = REXCVAR_GET(naruto_guest_msaa_max); max > 0 && int32_t(surface.samples) > max)
+    surface.samples = max >= 2 ? plume::RenderSampleCount::COUNT_2 : plume::RenderSampleCount::COUNT_1;
   if (surface.samples == plume::RenderSampleCount::COUNT_1) {
     // sa2-nx (2026-10-20, sa2_renut_msaa): the game's single-sample targets multisampled on the host.
     static const plume::RenderSampleCounts forced = [] {

@@ -252,6 +252,16 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   `sa2_gpu_render_scale = false` keeps 1280x720 docked too. Stack sampling (`switch_profile_stacks`) cut the network
   log after 18 s and the run never quit (the game kept running): not used over nxlink for now.
 
+- **Console GPU in fights (2026-10-24, gpu1/gpu2, msaa1, scale540/480; handheld, GPU 460.8 MHz)**: now the limit,
+  18-32 ms a frame. `renut_gpu_profile`: the scene pass (1280x720 colour+depth, 730-1100 draws) is 15-28 ms of it;
+  resolves ~1.5, present ~0.7. Split by pixel shader (`banjo_renut_diag_gpu_shaders`): the top three
+  (4804D7AF 321 draws 5.5 ms, 83600BA5 27 draws 5.2 ms, CCBE7B4F 9 draws 2.7 ms) are trivial (one texture, fog,
+  alpha test). The scene is 4x MSAA (the 360's tiling) and Renut makes the host targets 4x too:
+  `naruto_guest_msaa_max = 1` (new, default 0) gains only 8-10 % (scene pass 18-20 -> 16-17 ms). Render scale to test
+  fill against vertices: not available, `sa2_render_height_*` takes only 480/720/1080/1440/2160 and our deko3d
+  package is built with scale1 (Renut keeps 1x silently). Per frame: ~40 fragment barriers, ~6 full, ~7 texture
+  uploads. Open: vertex or fill bound (a docked run at 768 MHz, or a package without scale1 for 480p).
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
