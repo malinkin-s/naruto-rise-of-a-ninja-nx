@@ -31,7 +31,8 @@ From `x360-switch-ports/skill/templates/port-journal.md`. The place to think, no
 
 ## Current stage
 
-Stage: 3 (PC boot with the emulated GPU): menus, the story intro, Konoha gameplay and a Fight Mode fight work.
+Stage: 6 early (the user's priority: the console first), with 3 done on the PC: menus, story, gameplay, a fight, saves.
+First NRO without a renderer built; next: boot it on the console (logs, audio, no picture), then Renut on deko3d.
 Goal: codegen clean for `default.xex` + `ai2c.dll`, the missed-code sweep (SOL-CODE-1) done, every manifest fix with
 evidence: done 2026-10-24. Stage 3 goal: boot, menus, gameplay, cutscenes, saves on the PC (SOL-ROUTE-2). Next: input
 scripted input (SOL-TEST-2) done; next: play to the first real autosave and load it, a mission, a long session.
@@ -157,6 +158,16 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   next piece starts from that save. `new_game_to_autosave1.nxinput` (100 s, 758 states): autosave at +93.4 s with
   6,339 non-zero bytes, "MISSION UPDATE: Steal the Forbidden Scroll", Naruto idle after the end; its saves are the
   snapshot `out/saves/autosave1` for the next piece (`tools/pc/record.sh NAME out/saves/autosave1`).
+
+- **First Switch NRO (2026-10-24)**, the user's priority: reach the console fast, renderer later. `tools/switch/build.sh`
+  in Docker image `naruto-nx/devkita64` (devkitpro/devkita64 + `dkp-pacman -Syu`: devkitA64 r30, GCC 16.1, deko3d
+  0.5.0, libnx 4.12.0; the published image had GCC 15.2), the sa2-nx toolchain file, Release (-O3), no LTO, no PGO.
+  No renderer: `REXGLUE_SWITCH_NO_NVK=ON` with an empty `libvulkan.a` stub, no GPU plugin (the SDK's static loader
+  wants xenos' two entry points: `app/src/naruto_no_gpu_plugin.cpp` answers "no plugin"). AI2C linked in as sa2-nx's
+  Data_DLL (`ld -r` + `objcopy --localize-hidden --redefine-sym`, `app/src/naruto_static_modules.cpp`). Settings
+  compiled in from `app/naruto_switch_defaults.toml` (`game_data_root = "sdmc:/switch/naruto-nx/game"`, logs on).
+  Result: `out/nx/naruto.nro` 46 MB (text 45.5 MB, bss 5.3 MB), `_start` at 0, both AI2C entry points present.
+  `tools/switch/package.sh` makes `out/nx/sdcard/switch/naruto-nx/{naruto.nro, game/}`.
 
 ## Open questions and hypotheses
 
