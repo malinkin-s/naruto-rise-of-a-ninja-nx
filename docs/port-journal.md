@@ -262,6 +262,13 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   package is built with scale1 (Renut keeps 1x silently). Per frame: ~40 fragment barriers, ~6 full, ~7 texture
   uploads. Open: vertex or fill bound (a docked run at 768 MHz, or a package without scale1 for 480p).
 
+- **GPU clock and LTO (2026-10-24, gpu768, lto768)**: the user set the GPU to 768 MHz by hand (handheld). GPU time
+  fell about 30 % (21-32 -> 14-21 ms a frame) but fights stayed at 34-39 FPS: the game thread ("Main XThread", core
+  0) is at 87 % CPU, 26 ms Swap to Swap. So at the stock 460.8 MHz the GPU is the limit, above it the game's CPU
+  work. LTO of `naruto_recomp` + the app (sa2-nx's set without -fipa-pta, AI2C and the renderer library left out):
+  no change (26 ms a frame, 87 %); `NARUTO_SWITCH_LTO` stays in CMake, off. Next for the CPU: where the game thread
+  spends its time (needs stack samples that do not break the network log), then direct calls / AI2C in LTO.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
@@ -297,3 +304,5 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 |---|---|---|---|---|---|---|---|
 | 2026-10-24 | prof3: -O3, no LTO, enhancements off | 1020 / 460.8 / 1600 (handheld) | fight vs Sasuke | 15-27 FPS, most 54-128 ms | 38-55 ms Swap to Swap (7-11 ms of it paced) | 20-42 ms | 24-32 ms |
 | 2026-10-24 | prof4: + `sa2::enh::Resolve()` | 1020 / 460.8 / 1600 (handheld) | fight vs Sasuke | 30-42 FPS, most 40-147 ms | 0-0.4 ms paced | 9-16 ms | 18-32 ms |
+| 2026-10-24 | gpu768: as prof4 | 1020 / 768 / 1600 (set by hand) | fight vs Sasuke | 34-39 FPS | 26-30 ms Swap to Swap, 87 % CPU | 14-18 ms | 14-21 ms |
+| 2026-10-24 | lto768: + LTO | 1020 / 768 / 1600 | fight vs Sasuke | 33-39 FPS | 25-30 ms, 87 % CPU | 13-18 ms | 15-21 ms |

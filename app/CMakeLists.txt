@@ -89,6 +89,34 @@ if(REXGLUE_PLATFORM_SWITCH)
     target_include_directories(naruto PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/builtin_config")
     target_compile_definitions(naruto PRIVATE NARUTO_BUILTIN_CONFIG=1)
 
+    # Link-time optimisation (sa2-nx app/CMakeLists.txt, from nfsmw-nx / UnleashedRecomp-NX): the recompiled
+    # default.xex (naruto_recomp) and the app compiled to GIMPLE and optimised as one program at the link, so small
+    # game functions inline across files. Out of it: the SDK libraries, the renderer library (an archive of LTO objects
+    # needs gcc-ar) and AI2C (partially linked with ld -r above, which needs machine code). -ffp-contract=off and
+    # -fno-strict-aliasing repeated at the link (the LTRANS stage must not fuse what the compile stage kept apart);
+    # xxHash with XXH_FORCE_MEMORY_ACCESS=0 (nfsmw-nx: its default broke once inlined under LTO).
+    # Off: no gain measured on 2026-10-24 (lto768 against gpu768: the game thread stays at ~26 ms a frame).
+    option(NARUTO_SWITCH_LTO "Link-time optimisation of the game code and the app (Switch)" OFF)
+    set(NARUTO_SWITCH_LTO_JOBS "2" CACHE STRING "Parallel LTRANS jobs of the Switch LTO link (memory)")
+    option(NARUTO_SWITCH_IPA_PTA "-fipa-pta at the Switch LTO link" OFF)
+    target_compile_definitions(naruto PRIVATE XXH_FORCE_MEMORY_ACCESS=0)
+    if(NARUTO_SWITCH_LTO)
+        set(_naruto_lto_compile -flto -fno-fat-lto-objects)
+        set(_naruto_lto_link -flto=${NARUTO_SWITCH_LTO_JOBS} -flto-partition=balanced -ffp-contract=off
+                             -fno-strict-aliasing)
+        if(NARUTO_SWITCH_IPA_PTA)
+            list(APPEND _naruto_lto_compile -fipa-pta)
+            list(APPEND _naruto_lto_link -fipa-pta)
+        endif()
+        foreach(target naruto_recomp naruto)
+            if(TARGET ${target})
+                target_compile_options(${target} PRIVATE ${_naruto_lto_compile})
+            endif()
+        endforeach()
+        target_link_options(naruto PRIVATE ${_naruto_lto_link})
+        message(STATUS "naruto: Switch LTO on (${NARUTO_SWITCH_LTO_JOBS} LTRANS jobs, -fipa-pta ${NARUTO_SWITCH_IPA_PTA})")
+    endif()
+
     rexglue_switch_add_nro(naruto
         NAME "Naruto: Rise of a Ninja"
         AUTHOR "malinkin-s"

@@ -18,6 +18,7 @@ if [ $reconfigure = 1 ] || [ ! -f "$build/build.ninja" ]; then
     -DCMAKE_TOOLCHAIN_FILE='$root/tools/switch/cmake/switch-devkitA64.cmake' -DDEVKITPRO=/opt/devkitpro \
     -DREXGLUE_SWITCH_NVK_SDK='$stub' -DREXGLUE_SWITCH_NO_NVK=ON $* &&"
 fi
-docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$root:$root" -w "$root" naruto-nx/devkita64 \
+# NX_BUILD_MEM (default 7g): the container's memory cap, so an LTO link cannot starve the desktop (keep 3-4 GB free).
+docker run --rm --memory="${NX_BUILD_MEM:-7g}" --memory-swap="${NX_BUILD_MEM:-7g}" --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$root:$root" -w "$root" naruto-nx/devkita64 \
   bash -c "$cfg cmake --build '$build' -j$(nproc)"
 ls -la "$build"/*.nro
