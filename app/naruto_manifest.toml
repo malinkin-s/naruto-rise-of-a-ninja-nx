@@ -1,0 +1,27 @@
+# ReXGlue recompilation manifest for Naruto: Rise of a Ninja (Xbox 360 disc, title 555307E5).
+#
+# default.xex SHA-256 f8fd8a979fb5451460f820303a6ca4c75e01fd943aed600983cb68fc491af7bd: image base 0x82000000,
+# entry point 0x821776A0, XDK 2.0.6274 (docs/port-journal.md).
+# Layout and seeds from jorjbarbosa/naruto-rise-recomp app/narutorise_manifest.toml (GPL-3.0).
+
+[project]
+name = "naruto"
+sdk_version = "0.10.0"
+# Your own game files (the extracted disc), with default.xex at its root. Nothing from the game is in this project.
+game_root = "../game"
+
+[entrypoint]
+file_path = "../game/default.xex"
+out_directory_path = "generated/default"
+includes = ["analysis-seeds.toml"]
+
+# The game's engine logic: a guest DLL loaded with XexLoadImage (imports only XBOXKRNL/XAPILIB/LIBCMT).
+# AI2C.dll SHA-256 ed760975544e9aff2f603c284f62011d712e1fa408d0edbf7528fa534e9a0d3d, base 0x88000000.
+[[modules]]
+guest_path = "ai2c.dll"
+file_path = "../game/AI2C.dll"
+out_directory_path = "generated/ai2c"
+includes = ["ai2c-seeds.toml"]
+
+# Character DLC engines (AI2C@1/@2/@3.dll, one per session, same base 0x88000000): added once the base game boots
+# (decision 2026-10-24, NARUTO_DLC_ENGINES). Their seeds are in ai2c{1,2,3}-seeds.toml.

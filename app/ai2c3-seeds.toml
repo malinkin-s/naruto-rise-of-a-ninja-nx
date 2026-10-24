@@ -1,0 +1,7 @@
+# From jorjbarbosa/naruto-rise-recomp app/ai2c3-seeds.toml at 93feca6 (GPL-3.0). Evidence comments are theirs.
+# Discovery seeds for AI2C@3.dll shipped with Choji & Temari.
+# Entry point read from the original XEX header and observed in issue #7.
+# This revision has its own code layout; other revisions' seeds do not apply.
+[functions]
+"0x883AEF88" = {} # module entry point (DLL_PROCESS_ATTACH)
+"0x883AEB0C" = {} # unresolved branch at 0x883AEB5C in strict analysis

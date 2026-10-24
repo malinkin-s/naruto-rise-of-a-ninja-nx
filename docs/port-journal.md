@@ -31,9 +31,9 @@ From `x360-switch-ports/skill/templates/port-journal.md`. The place to think, no
 
 ## Current stage
 
-Stage: 1 (files and inspection), entering 2.
-Goal: XEX hashes pinned, modules listed, D3D version known (done); renderer chosen (done, below). Next: SDK base
-(sa2-nx fork vs upstream 0.10.0 with the PC base's patches) and how the guest DLL modules link into one NRO.
+Stage: 2 (translate and sweep missed code).
+Goal: codegen clean for `default.xex` + `ai2c.dll`, the missed-code sweep (SOL-CODE-1) done, every manifest fix with
+evidence. First codegen done 2026-10-24 (below). Next: the sweep, then the PC build of the app (stage 3).
 
 ## Known (with evidence)
 
@@ -72,12 +72,22 @@ Goal: XEX hashes pinned, modules listed, D3D version known (done); renderer chos
 - Both SDKs are upstream ReXGlue v0.10.0 (sa2-nx fork from `c94f5eb`, PC base manifest `sdk_version = "0.10.0"`):
   the PC base's seeds (`analysis-seeds.toml` 40 lines, `ai2c*-seeds.toml`) should carry over.
 
+- **First codegen (2026-10-24)**: the sa2-nx SDK fork (`sdk/`, our two changes in
+  `patches/sdk-naruto-on-sa2-fork.patch`), host `rexglue` built with `cmake --preset linux-amd64` (clang 22),
+  `rexglue codegen app/naruto_manifest.toml` with the PC base's seeds: exit 0, 0 warnings, 13.8 s, 316 files;
+  30,466 functions registered (24,123 `default.xex`, 6,343 `AI2C.dll`). Two lines
+  `BaseHeap::Release failed because address is not a region start` (after AI2C's Validate and at exit): to check
+  whether the second same-base DLL load path causes it (only one DLL now, so probably not; watch when DLC engines
+  are added).
+- **Same disc revision as the PC base**: every `sub_*` address their source names (116, hooks and helpers) is a
+  function start in our codegen (`out/pc_hooks.txt` vs `SetFunction` list). Their hook map applies as is.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
 |---|---|---|---|
 | How do `ai2c.dll` (and DLC `ai2c@N.dll`) become part of one NRO? | (a) the sa2-nx SDK fork already handles `[[modules]]` statically; (b) needs a static module table in place of host DLLs | grep the sa2-nx SDK fork for module registration / `XexLoadImage` on Horizon | **(a)**, see Known "Guest DLLs" |
-| Is our `default.xex` the revision the PC base's seeds and hook addresses were made for? | (a) yes (one retail disc revision); (b) another revision/region | first codegen with their `analysis-seeds.toml`: clean analysis and hooked addresses at function starts | |
+| Is our `default.xex` the revision the PC base's seeds and hook addresses were made for? | (a) yes (one retail disc revision); (b) another revision/region | first codegen with their `analysis-seeds.toml`: clean analysis and hooked addresses at function starts | **(a)**: all 116 `sub_*` addresses in their `app/src` are function starts in ours |
 | Is `LinkApp.xex` ever run? | (a) system-link/online launcher, never in single player; (b) needed for a mode we want | grep the PC base and its logs for `LinkApp`/`XLaunchNewImage`; strings in `default.xex` | PC base: no reference |
 | Does Renut's device-reading work with the 6274 device layout? | (a) same shadow registers and bound-object fields, only moved; (b) 6274 keeps state elsewhere (older private part) | diff the offsets the PC base reads (`d3d/device.*`, `state.*`) against Renut's `d3d_native.h` list | |
 | DLC support on the Switch: v1 or later? | 3 extra recompiled engines ≈ 3x the AI2C code in the NRO | size of generated `ai2c*` after codegen | |

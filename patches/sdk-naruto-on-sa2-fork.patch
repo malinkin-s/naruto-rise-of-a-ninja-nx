@@ -1,0 +1,75 @@
+--- a/src/codegen/project_recompiler.cpp
++++ b/src/codegen/project_recompiler.cpp
+@@ -275,6 +275,13 @@
+   }
+ 
+   std::vector<rex::system::object_ref<rex::system::UserModule>> dllModules;
++  // Snapshot each DLL's in-memory image right after it is loaded: a later
++  // DLL may share the same load address (an alternative-version module
++  // pair, e.g. ai2c.dll and the ai2c@2.dll shipped inside a DLC), and that
++  // later load would clobber this module's bytes before BinaryView gets a
++  // chance to copy them in the context-creation loop below.
++  // (naruto-rise-recomp patches/sdk/codegen-alt-version-dll-modules.patch, GPL-3.0)
++  std::vector<BinaryView> dllBinaryViews;
+   for (size_t i = 1; i < targeted.size(); ++i) {
+     const auto& dllConfig = targeted[i].config;
+     fs::path dllXexPath = configDir / dllConfig.filePath;
+@@ -319,6 +326,7 @@
+       }
+     }
+     dllModules.push_back(std::move(userMod));
++    dllBinaryViews.push_back(BinaryView::fromModule(*dllModules.back()->xex_module()));
+   }
+ 
+   struct ContextEntry {
+@@ -358,8 +366,7 @@
+   }
+ 
+   for (size_t i = 0; i < dllModules.size(); ++i) {
+-    auto& userMod = dllModules[i];
+-    auto bv = BinaryView::fromModule(*userMod->xex_module());
++    auto bv = std::move(dllBinaryViews[i]);
+ 
+     auto dll_display = make_display_name(targeted[i + 1].config.filePath);
+     RecompilerConfig cfg = std::move(targeted[i + 1].config);
+@@ -432,6 +439,19 @@
+       uint32_t b_base = contexts[j].ctx.binary().baseAddress();
+       uint32_t b_end = b_base + contexts[j].ctx.binary().imageSize();
+       if (a_base < b_end && b_base < a_end) {
++        // Alternative-version DLL pairs (e.g. ai2c.dll and the ai2c@2.dll
++        // shipped inside a DLC) share the same load address. The game only
++        // ever loads one of them per session, and the runtime keys
++        // recompiled module libraries by guest path, so overlap between two
++        // DLL modules is expected and safe.
++        if (contexts[i].module->isDll && contexts[j].module->isDll) {
++          REXCODEGEN_WARN(
++              "DLL modules '{}' [{:08X}, {:08X}) and '{}' [{:08X}, {:08X}) overlap; "
++              "treating them as alternative versions of the same module",
++              contexts[i].module->targetName, a_base, a_end,
++              contexts[j].module->targetName, b_base, b_end);
++          continue;
++        }
+         return Err<void>(ErrorCategory::Validation,
+                          fmt::format("Module '{}' [{:08X}, {:08X}) overlaps '{}' [{:08X}, {:08X})",
+                                      contexts[i].module->targetName, a_base, a_end,
+--- a/src/kernel/xboxkrnl/xboxkrnl_io.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_io.cpp
+@@ -473,6 +473,18 @@
+     return X_STATUS_OBJECT_NAME_INVALID;
+   }
+ 
++  // ObDosDevices pseudo-handle carries no directory object, so bare relative
++  // paths would reach the VFS without a device prefix and fail with noisy
++  // device-not-found errors. On hardware these resolve against the game
++  // drive; route them to the same mount so they get a clean NO_SUCH_FILE.
++  if (object_attrs->root_directory == 0xFFFFFFFD && !target_path.empty() &&
++      target_path.front() != '\\' && target_path.find(':') == std::string::npos) {
++    if (target_path.back() == '\\') {
++      target_path.pop_back();
++    }
++    target_path = "game:\\" + target_path;
++  }
++
+   if (object_attrs->root_directory != 0xFFFFFFFD &&  // ObDosDevices
+       object_attrs->root_directory != 0) {
+     auto root_file = REX_KERNEL_OBJECTS()->LookupObject<XFile>(object_attrs->root_directory);
