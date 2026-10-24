@@ -131,6 +131,16 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   - `BaseHeap::Release failed because address is not a region start` x2-6 after saves and loads: no visible effect.
     XMA "silence ... no progress" bursts at the start of gameplay: listen for audio gaps later.
 
+- **Pad recording (2026-10-24)**: `input_record=<file>` / `input_replay=<file>` added to the SDK's
+  `input_system.cpp` (in `patches/sdk-naruto-on-sa2-fork.patch`): every change of user 0's pad (connection, buttons,
+  triggers, full stick values) as `S <us> <connected> <buttons> <lt> <rt> <lx> <ly> <rx> <ry>`, timed on an input
+  clock that advances only while the game polls, at most 100 ms between polls (idea from naruto-rise-recomp's
+  `input_replay.cpp`), so loads without polling do not shift the presses. `tools/pc/record.sh NAME` records a session
+  from an empty user data root into `tools/pc/inputs/NAME.nxinput` (pad states only, committed) and keeps its saves
+  in `out/saves/NAME/`; `REPLAY=... tools/pc/scripted.sh` plays it back. Checked: a 25 s recording (START at 22.4 s,
+  A at 24.3 s, a real pad) replayed to the Single Player Menu. The game is not deterministic (fight AI, load
+  lengths): a replay follows the recorded path, not the same frames; long replays may drift.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
