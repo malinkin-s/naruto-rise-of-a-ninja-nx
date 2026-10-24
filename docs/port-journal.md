@@ -307,8 +307,9 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   real piece, AI2C's sub_88398D20 (a copy loop body reading its parent's ctr): `share_registers` in the new
   `app/ai2c-overrides.toml` (AI2C only). NRO 40.8 MB. opt8 ran overclocked (the user's manual test: CPU 1785 MHz, GPU 768 MHz;
   first read wrongly as stock CPU): ~11 ms CPU a frame there, fights 46-54 FPS, GPU-bound (~20 ms), frames right, no
-  crash. Not comparable with opt6 (1020 MHz): the step-3 gain at stock clocks is still to measure. Lesson: check
-  the report's "clocks:" line before comparing two runs.
+  crash. Not comparable with opt6 (1020 MHz). At stock clocks (konoha1, 1020 / 460.8; the menu path led to another
+  fight, Neji vs Sasuke, not Konoha): ~15.5 ms CPU a frame (opt6 ~17.5, classic ~23.4: -34 %), fights 32-44 FPS,
+  GPU-bound (23-31 ms). Lesson: check the report's "clocks:" line before comparing two runs.
 
 ## Open questions and hypotheses
 
@@ -349,4 +350,5 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 | 2026-10-24 | lto768: + LTO | 1020 / 768 / 1600 | fight vs Sasuke | 33-39 FPS | 25-30 ms, 87 % CPU | 13-18 ms | 15-21 ms |
 | 2026-10-25 | opt3: codegen step 1 | 1020 / 460.8 / 1600 | fight vs Sasuke | 31-42 FPS | ~21.5 ms CPU a frame | 8-17 ms | 21-31 ms |
 | 2026-10-25 | opt6: + step 2, -fno-strict-aliasing, -ffp-contract=off | 1020 / 460.8 / 1600 | fight vs Sasuke | 31-45 FPS | ~17.5 ms CPU a frame | | |
+| 2026-10-25 | konoha1: step 3 (Neji vs Sasuke) | 1020 / 460.8 / 1600 | fight | 32-44 FPS | ~15.5 ms CPU a frame | 15-21 ms | 23-31 ms |
 | 2026-10-25 | opt8: + step 3 (non_volatile_as_local, elide_lr_stores) | 1785 / 768 / 1600 (overclocked by hand) | fight vs Sasuke | 46-54 FPS | ~11 ms CPU a frame | 8-13 ms | 17-22 ms |
