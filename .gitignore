@@ -1,0 +1,34 @@
+# Game data: never commit anything from the disc, DLC or title update (copyrighted)
+game/
+game_root/
+*.iso
+*.xex
+*.dll
+*.bik
+*.big
+*.fat
+*.sdb
+*.xzp
+*.SRA
+*.bf
+*.stfs
+dlc/
+title_update/
+
+# Generated from the game: recompiled code, shader dumps and packages
+generated/
+app/generated/
+out/
+build/
+build-*/
+*.nro
+*.nacp
+*.dksh
+*.bdkg
+
+# Reference checkouts kept next to the port
+ref/
+
+# Editors
+.vscode/
+.idea/
