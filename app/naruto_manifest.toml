@@ -13,7 +13,7 @@ game_root = "../game"
 [entrypoint]
 file_path = "../game/default.xex"
 out_directory_path = "generated/default"
-includes = ["analysis-seeds.toml"]
+includes = ["analysis-seeds.toml", "gap-seeds.toml"]
 
 # The game's engine logic: a guest DLL loaded with XexLoadImage (imports only XBOXKRNL/XAPILIB/LIBCMT).
 # AI2C.dll SHA-256 ed760975544e9aff2f603c284f62011d712e1fa408d0edbf7528fa534e9a0d3d, base 0x88000000.

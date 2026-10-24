@@ -33,7 +33,7 @@ From `x360-switch-ports/skill/templates/port-journal.md`. The place to think, no
 
 Stage: 2 (translate and sweep missed code).
 Goal: codegen clean for `default.xex` + `ai2c.dll`, the missed-code sweep (SOL-CODE-1) done, every manifest fix with
-evidence. First codegen done 2026-10-24 (below). Next: the sweep, then the PC build of the app (stage 3).
+evidence. First codegen and the SOL-CODE-1 sweep done 2026-10-24 (below). Next: the PC build of the app (stage 3).
 
 ## Known (with evidence)
 
@@ -82,6 +82,24 @@ evidence. First codegen done 2026-10-24 (below). Next: the sweep, then the PC bu
 - **Same disc revision as the PC base**: every `sub_*` address their source names (116, hooks and helpers) is a
   function start in our codegen (`out/pc_hooks.txt` vs `SetFunction` list). Their hook map applies as is.
 
+- **SOL-CODE-1 sweep (2026-10-24)**, tools from sa2-nx (`tools/`, GPL-3.0) with Naruto's code ranges from the PE
+  section tables (`default` .text+BINK 0x820C0000-0x826CFE34, AI2C .text 0x88040000-0x883A0C20):
+  - gaps + data pointers into gaps (`tools/gap_pass.py`, our one-pass take on `gap_fixpoint.py`): `default` 106 + 8
+    accepted (2 passes, then fixpoint) in `app/gap-seeds.toml`, 36 of them targets of data words (vtables at
+    0x8208C4xx-0x8208C9xx); AI2C 0 (1 candidate, rejected). Functions 23,857 -> 23,965.
+  - `find_gaps.py` miscounted: the generator drops unreachable instructions (`b` after `b`), so "start + 4 x
+    comments" ended functions early (sub_880412C8: 309 comments, 318 instructions, its tail 0x8804179C-0x880417BC
+    reported as a gap). Fixed to measure from the last label: AI2C gaps >= 8 bytes 3,115 -> 11, `default` 624 -> 408
+    (the rest: 305 data pairs inside .text, C++ EH data, 11 zero runs).
+  - jump tables (`switch_check.py`): truncated 0, wrong targets 0, missed 0 in both modules. 6 "odd shapes" in
+    `default` are function-pointer tables in .data/.rdata (every code value a registered function): safe.
+    `pointer_audit.py` "built in code" 239 = inline jump tables after `bctr`: not entries.
+  - setjmp/longjmp: `default` 0x822CC540/0x822CC220 (PC base seeds, the only functions storing/loading r1 through
+    r3/r7); AI2C has none (no r1 store/load through any register but r1).
+  - Exceptions: `default` imports RtlRaiseException, RtlUnwind, RtlCaptureContext; `sub_822D837C` restores a whole
+    context and jumps to r3 (EH unwinding, called from sub_822CFB70 <- sub_822CFCB8/sub_822CFE28). The SDK's
+    RtlUnwind is a stub that logs `[STUB] RtlUnwind called`: watch the PC logs for it.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
@@ -90,6 +108,7 @@ evidence. First codegen done 2026-10-24 (below). Next: the sweep, then the PC bu
 | Is our `default.xex` the revision the PC base's seeds and hook addresses were made for? | (a) yes (one retail disc revision); (b) another revision/region | first codegen with their `analysis-seeds.toml`: clean analysis and hooked addresses at function starts | **(a)**: all 116 `sub_*` addresses in their `app/src` are function starts in ours |
 | Is `LinkApp.xex` ever run? | (a) system-link/online launcher, never in single player; (b) needed for a mode we want | grep the PC base and its logs for `LinkApp`/`XLaunchNewImage`; strings in `default.xex` | PC base: no reference |
 | Does Renut's device-reading work with the 6274 device layout? | (a) same shadow registers and bound-object fields, only moved; (b) 6274 keeps state elsewhere (older private part) | diff the offsets the PC base reads (`d3d/device.*`, `state.*`) against Renut's `d3d_native.h` list | |
+| Does the game raise exceptions in play (RtlUnwind is a stub)? | (a) never in normal play (the PC base plays through); (b) some path (shader compiler, file errors) | grep PC-boot logs for `[STUB] RtlUnwind` | |
 | DLC support on the Switch: v1 or later? | 3 extra recompiled engines ≈ 3x the AI2C code in the NRO | size of generated `ai2c*` after codegen | |
 | Can the 1020 MHz A57 hold 30 FPS in the open world? | game thread or render thread limits | stage 7 measurements | |
 
