@@ -31,10 +31,10 @@ From `x360-switch-ports/skill/templates/port-journal.md`. The place to think, no
 
 ## Current stage
 
-Stage: 3 (PC boot with the emulated GPU), reached the title screen and the attract demo.
+Stage: 3 (PC boot with the emulated GPU): menus, the story intro, Konoha gameplay and a Fight Mode fight work.
 Goal: codegen clean for `default.xex` + `ai2c.dll`, the missed-code sweep (SOL-CODE-1) done, every manifest fix with
 evidence: done 2026-10-24. Stage 3 goal: boot, menus, gameplay, cutscenes, saves on the PC (SOL-ROUTE-2). Next: input
-to get past "PRESS START" (scripted input, SOL-TEST-2), then menus and a mission.
+scripted input (SOL-TEST-2) done; next: play to the first real autosave and load it, a mission, a long session.
 
 ## Known (with evidence)
 
@@ -114,6 +114,23 @@ to get past "PRESS START" (scripted input, SOL-TEST-2), then menus and a mission
   Log oddities to look at later: `game:\ERRasser.log` and `game:\Menu` opens fail (probably debug probes),
   `ShaderDumpxe:\CompareBackEnds` (debug device), `\Device\Image` open fails after the AI2C load.
 
+- **Scripted input (2026-10-24)**: the sa2-nx SDK's `input_script` cvar (`'seconds:button[:hold],...'`, wall time
+  from the first input poll; while set, user 0 reads only the script, focus not needed) driven by
+  `tools/pc/scripted.sh NAME <scenario>`: own user data root per run (`SAVE=<snapshot>` copies saves in), window
+  screenshots at given times (hyprctl + grim, window only) and a contact sheet, all in `out/runs/NAME/` (ignored).
+  The PC base's `input_replay.cpp` (recording from a real pad) was not needed. Scenarios in `tools/pc/scenarios/`.
+  The main menu comes up between 22 and 33 s from run to run, so scenarios press START every 4 s up to 34 s (it
+  does nothing in the main menu) and choose from 40 s.
+  - story1: Story Mode -> New Game -> "Saved Game Warning" -> intro (full moon) -> Konoha, Iruka's dialogue, HUD,
+    tutorial hint; three save slots created (`XamContentCreate ... result 00000000`).
+  - load1/load2 (`fight.sh`): Fight Mode -> Tournament -> Naruto vs Sasuke: fight HUD, timer, Sasuke's fire jutsu
+    sequence, knock-downs; no errors.
+  - load3 (`story_load.sh`): Load Game lists Autosave / Player Save 1, then "Damaged saved game": expected, the slots
+    hold only the `UBISG` header (33 non-zero bytes of 262,144): New Game reserves them, progress is written at the
+    first story autosave, which story1 did not reach.
+  - `BaseHeap::Release failed because address is not a region start` x2-6 after saves and loads: no visible effect.
+    XMA "silence ... no progress" bursts at the start of gameplay: listen for audio gaps later.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
@@ -123,6 +140,7 @@ to get past "PRESS START" (scripted input, SOL-TEST-2), then menus and a mission
 | Is `LinkApp.xex` ever run? | (a) system-link/online launcher, never in single player; (b) needed for a mode we want | grep the PC base and its logs for `LinkApp`/`XLaunchNewImage`; strings in `default.xex` | PC base: no reference |
 | Does Renut's device-reading work with the 6274 device layout? | (a) same shadow registers and bound-object fields, only moved; (b) 6274 keeps state elsewhere (older private part) | diff the offsets the PC base reads (`d3d/device.*`, `state.*`) against Renut's `d3d_native.h` list | |
 | Does the game raise exceptions in play (RtlUnwind is a stub)? | (a) never in normal play (the PC base plays through); (b) some path (shader compiler, file errors) | grep PC-boot logs for `[STUB] RtlUnwind` | |
+| Do saves round-trip (write real progress, load it)? | (a) yes, slots are only pre-allocated so far; (b) a content/signature problem | play past the first story autosave (Save.dat with data), then Load Game | |
 | DLC support on the Switch: v1 or later? | 3 extra recompiled engines ≈ 3x the AI2C code in the NRO | size of generated `ai2c*` after codegen | |
 | Can the 1020 MHz A57 hold 30 FPS in the open world? | game thread or render thread limits | stage 7 measurements | |
 
