@@ -189,6 +189,14 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
     game exits, and a TCP probe of 28280 uses it up: `tools/switch/nx_wait.py` waits for it by UDP ("nxboot" ->
     "bootnx", sent from port 28771 so ufw lets the answer in).
 
+- **Renut on Naruto, first frames (2026-10-24, PC, plume Vulkan)**: Renut vendored from sa2-nx, its device offsets
+  retargeted (Naruto's private layout is N&B's, -8 from 0x2E2C on, -16 in places), four hooks on: D3D's hardware
+  initialisation 8213ECE8 (Naruto's own creation runs, inlined in the game at 820E6B00; the hook then takes the device
+  over: Renut's fence word, Renut's ring sink, Video::SetGuestDevice), KickOff 8212F608, BlockOnFence 8212F708, Swap
+  82138A20. Result (`--sa2_renderer=renut`): "Guest D3D device (type 1) ... at 0x40001e00, fence 5, taken over", 60.0
+  game fps through Renut's Swap, render thread 0.06-0.08 ms a frame, GPU 0.5-0.8 ms, 0 draws (draw hooks not on yet),
+  clean exit. Next: ClearF, Resolve, resource destruction, the draws, then shaders.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |

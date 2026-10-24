@@ -281,7 +281,7 @@ static_assert(offsetof(Device, m_ZFilter) == 0x2A8A);
 // sa2-nx: SA2's sub_8255C808 and sub_8254FC10 (N&B 10888, 10892, 23980).
 constexpr u32 kDeviceOffsetCreationThreadId = 10888;  // GetCurrentThreadId()  // Naruto: N&B value (PC base uses +10888)
 constexpr u32 kDeviceOffsetIsTitleProcess = 10892;    // KeGetCurrentProcessType() == 2  // Naruto: N&B value, UNVERIFIED
-constexpr u32 kDeviceOffsetBehaviorFlags = 24392;     // Direct3D_CreateDevice arg 4  // naruto-nx: SA2 value, used only by the native creation, which Naruto does not run (beyond its 0x5780-byte device)
+constexpr u32 kDeviceOffsetBehaviorFlags = 22280;     // Direct3D_CreateDevice arg 4  // Naruto: 820E6B00 stores 0x0C000001 there
 
 // Bound objects the Set* calls store in the CDevice-private area (guest VAs).
 // sa2-nx: SA2's "is the resource bound" test (sub_825498C8) reads every one of
@@ -323,7 +323,7 @@ static_assert(kDeviceOffsetPredication + 4 <= kDeviceSnapshotSize);
 constexpr u32 kDeviceOffsetVerticesRingEnd = 13428;  // Naruto: UNVERIFIED (Naruto BeginVertices 821375A0 reads +13428)
 // Swap bookkeeping (D3DDevice_Swap 0x82287590; SA2's sub_82558E98, which
 // also sets the pending flag in SynchronizeToPresentationInterval sub_825589D8).
-constexpr u32 kDeviceOffsetSwapCount = 16552;        // [0x40B0]  // Naruto: PC base frame.cpp "+16552 counts as flipped" (N&B -8)
+constexpr u32 kDeviceOffsetSwapCount = 16544;        // [0x40B0]  // Naruto: Swap 82138A20 starts with +16544 += 1 (N&B - 16; +16552 is the flipped count)
 constexpr u32 kDeviceOffsetFenceTag = 10908;         // current fence tag [0x2A9C]  // Naruto: BlockOnFence 8212F708
 constexpr u32 kDeviceOffsetSwapFenceTag = 10928;     // fence tag at the last Swap [0x2AB0]  // Naruto: N&B value, UNVERIFIED
 constexpr u32 kDeviceOffsetPresentFenceTag = 14932;  // fence tag of the last presented frame [0x3A5C]  // Naruto: N&B -8, UNVERIFIED (PC base keeps the frame fence at +14924)

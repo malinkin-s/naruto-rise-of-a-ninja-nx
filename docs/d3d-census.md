@@ -24,9 +24,10 @@ N&B values its comments give in brackets, each checked in Naruto's code.
 
 | Naruto | Renut's function (hypothesis) | Evidence |
 |---|---|---|
-| 8213ECE8 | Direct3D_CreateDevice | calls VdInitializeEngines, VdSetGraphicsInterruptCallback, VdIsHSIOTrainingSucceeded; PC base "Device creation" |
+| 820E6B00 | the game's renderer setup with Direct3D_CreateDevice inlined (LTCG) | XMemAlloc 22528, device at 128 alignment, memset 22400, refcount 1, +10880/+10888/+10892, side buffer 0x12C0 at +16712, behaviour flags 0x0C000001 at +22280, then 8213ECE8; the device goes to the game object's +16 |
+| **8213ECE8** | **D3D's hardware device initialisation (CDevice*, D3DPRESENT_PARAMETERS*) -> BOOL** (confirmed: Renut hooks it) | critical sections at +14928/+14956 (N&B -16), `lis r3,6274` (the XDK version), VdInitializeEngines, VdSetGraphicsInterruptCallback |
 | 8213EF10 | device destruction | VdShutdownEngines, VdSetGraphicsInterruptCallback; PC base: last reference destroys the device |
-| 82138A20 | D3DDevice_Swap (CDevice swap) | the only caller of VdSwap and VdGetSystemCommandBuffer; also VdSetDisplayMode, VdPersistDisplay |
+| **82138A20** | **D3DDevice_Swap(device, front buffer, parameters)** (confirmed: Renut hooks it; swap count +16544) | the only caller of VdSwap and VdGetSystemCommandBuffer; also VdSetDisplayMode, VdPersistDisplay |
 | 8212FA80 | ring initialisation (RingBufferDeviceAllocate side) | VdInitializeRingBuffer, VdEnableRingBufferRPtrWriteBack, MmGetPhysicalAddress |
 | 8212EF28 | KickOff (internal) | writes CP_RB_WPTR (lis 0x7FC8, +0x714); called by 8212F530, 82146C48, 82147370 |
 | 8212F530 | the kick's submission (writes the segment, then 8212EF28) | called by KickOff with the segment from 8212F0D0 / 8212EA18 |

@@ -107,7 +107,7 @@ constexpr u32 kDeviceOffsetFenceCompletion = 10896;  // Naruto: BlockOnFence 821
 // sa2-nx: the word SA2's CDevice::BlockOnFence (sub_8254D6E8) tests [13232].
 constexpr u32 kDeviceOffsetInKickOff = 13216;  // Naruto: BlockOnFence 8212F708 tests +13216 before kicking
 // Side buffer (0x12C0 bytes) every device gets.
-constexpr u32 kDeviceOffsetSideBuffer = 16720;  // Naruto: N&B -8, UNVERIFIED (native creation only)
+constexpr u32 kDeviceOffsetSideBuffer = 16712;  // Naruto: 820E6B00 stores the 0x12C0 side buffer there (N&B - 16)
 constexpr u32 kSideBufferSize = 0x12C0;
 // Set to -1 by the device-type-2 path.
 // naruto-nx: the constants below serve Renut's native Direct3D_CreateDevice, which Naruto does not use (its own
@@ -1230,6 +1230,8 @@ void D3D_CDevice_Uninitialize_hook(u32 device) {
 
 } // namespace
 
+u32 NarutoTitleDevice();  // naruto-nx: below, the creation hook's device
+
 namespace renut::gpu::native {
 
 void RewindRing(Device device) {
@@ -1249,8 +1251,8 @@ void BlockOnFence(u32 device_va, u32 fence) {
 }
 
 u32 GlobalDevice() {
-  const u32 global = LoadGuestU32(kVdGlobalDeviceImportSlot);
-  return global ? LoadGuestU32(global) : 0;
+  // naruto-nx: the title device the creation hook took over (SA2 read it from VdGlobalDevice's import slot).
+  return ::NarutoTitleDevice();
 }
 
 void Swap(u32 device_va, u32 front_buffer, u32 parameters) {
@@ -1421,3 +1423,80 @@ RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_82558E98, D3DDevice_Swap_hook));  // D3DDevi
 RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254D6E8, BlockOnFence_hook));  // D3D_CDevice_BlockOnFence [0x8228F558]
 BANJO_RENUT_HOOK_SHARED(sub_8254F400, CBlocker_Check_hook);  // D3D_CBlocker_Check [0x8264DCD0]
 RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254ECF8, IsFencePending_hook));  // D3DDevice_IsFencePending [0x8228F650]
+
+// ---------------------------------------------------------------------------
+// naruto-nx (2026-10-24): Naruto's hooks (docs/d3d-census.md, docs/renut-retarget.md)
+// ---------------------------------------------------------------------------
+// Naruto's Direct3D_CreateDevice is inlined into the game's renderer setup (820E6B00: XMemAlloc 22528, the 22400-byte
+// device at 128, refcount 1, +10880/+10888/+10892, the 0x12C0 side buffer at +16712, behaviour flags 0x0C000001 at
+// +22280), which then calls D3D's hardware initialisation, 8213ECE8 (CDevice*, D3DPRESENT_PARAMETERS*) -> BOOL. With no
+// GPU plugin the SDK answers its Vd* calls (VdInitializeRingBuffer and the interrupt callback are ignored), so it
+// completes with Naruto's register image, API state and presentation surfaces, unlike SA2's, which sa2-nx ran as a
+// no-hardware device and finished by hand (Sa2CreateDevice above). The hook then takes the device over: fences
+// complete through Renut's own word (the render thread writes it), the ring is Renut's sink, and the device is the
+// one Renut presents.
+
+REX_EXTERN(__imp__sub_8213ECE8);  // Naruto's Direct3D_CreateDevice, the original
+
+namespace {
+
+u32 g_naruto_device = 0;
+
+void NarutoInitializeHardwareDevice(PPCContext &ctx, uint8_t *base) {
+  const u32 device_va = ctx.r3.u32;
+  constexpr u32 device_type = 1;  // the title's hardware device (the only one Naruto creates)
+  constexpr bool title_device = true;
+  if (!records::Init()) {
+    ctx.r3.u64 = kE_OUTOFMEMORY;
+    return;
+  }
+  if (!g_ring_sink)
+    g_ring_sink = records::AllocPhysicalBlock(kRingSinkSize);
+  if (!g_ring_data)
+    g_ring_data = records::AllocPhysicalBlock(kRingDataSize);
+  const u32 fence_va = records::AllocPhysicalBlock(0x80);
+  if (!g_ring_sink || !g_ring_data || !fence_va) {
+    RGPU_ERROR("Direct3D_CreateDevice: guest allocation failed");
+    ctx.r3.u64 = kE_OUTOFMEMORY;
+    return;
+  }
+  std::memset(GuestPtr<u8>(g_ring_sink), 0, kRingSinkSize);
+  std::memset(GuestPtr<u8>(fence_va), 0, 0x80);
+
+  __imp__sub_8213ECE8(ctx, base);
+  if (ctx.r3.u32 == 0) {
+    RGPU_ERROR("D3D hardware device initialisation (Naruto's 8213ECE8) failed");
+    return;
+  }
+  const u32 result = ctx.r3.u32;
+  native::Device d = native::DeviceAt(device_va);
+  if (!d) {
+    ctx.r3.u64 = kE_OUTOFMEMORY;
+    return;
+  }
+  u8 *bytes = d.bytes;
+  // Every fence issued so far counts as complete; from here the render thread completes them (KickFence).
+  const u32 current_fence = *reinterpret_cast<const be_u32 *>(bytes + d3d::kDeviceOffsetFenceTag);
+  *GuestPtr<be_u32>(fence_va) = current_fence - 1;
+  WriteU32(bytes, kDeviceOffsetFenceCompletion, fence_va);
+  bytes[kDeviceOffsetFlags2] &= u8(~kDeviceFlagImmediateFences);
+  native::RewindRing(d);
+  if (title_device) {
+    g_naruto_device = device_va;
+    Video::SetGuestDevice(device_va);
+  }
+  RGPU_INFO("Guest D3D device (type {}) created by Naruto's own code at {:#010x}, fence {}, taken over",
+            device_type, device_va, current_fence);
+  ctx.r3.u64 = result;
+}
+
+}  // namespace
+
+u32 NarutoTitleDevice() { return g_naruto_device; }
+
+BANJO_RENUT_HOOK_RAW(sub_8213ECE8) {  // D3D's hardware device initialisation (VdInitializeEngines, the interrupt callback)
+  NarutoInitializeHardwareDevice(ctx, base);
+}
+BANJO_RENUT_HOOK(sub_8212F608, KickOff_hook);       // CDevice::KickOff (returns m_pRing; BlockOnFence calls it)
+BANJO_RENUT_HOOK(sub_8212F708, BlockOnFence_hook);  // CDevice::BlockOnFence(device, fence, flags)
+BANJO_RENUT_HOOK(sub_82138A20, D3DDevice_Swap_hook);  // D3DDevice_Swap(device, front buffer, parameters): VdSwap

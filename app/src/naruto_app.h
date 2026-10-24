@@ -12,6 +12,16 @@
 
 #include "naruto_test_exit.h"
 
+// Renut's Direct3D-level renderer (app/src/renut_engine, from sa2-nx), chosen at boot with sa2_renderer = "renut".
+#if SA2_RENUT_RENDERER
+#include <optional>
+
+#include "renut_engine/gpu/banjo_renut_capture.h"
+#include "renut_engine/gpu/banjo_renut_select.h"
+#include "renut_engine/gpu/overlay/app_integration.h"
+#include "sa2_capture.h"
+#endif
+
 #if defined(NARUTO_BUILTIN_CONFIG)
 #include "naruto_builtin_config.h"  // generated from app/naruto_switch_defaults.toml (CMake)
 #endif
@@ -38,6 +48,38 @@ class NarutoApp : public rex::ReXApp {
       if (dir == dir.parent_path()) break;
     }
   }
+
+#if SA2_RENUT_RENDERER
+  // As sa2-nx's Sa2App: with Renut no SDK graphics system and no GPU plugin; the renderer has its own swapchain and
+  // thread, draws the SDK's menus through its plume drawer, and starts once the window exists.
+  void OnPreSetup(rex::RuntimeConfig& config) override {
+    if (banjo::renut_gpu::Active()) {
+      renut::gpu::ConfigureRuntime(config);
+      REXLOG_INFO("graphics: Renut's Direct3D-level renderer (sa2_renderer = renut)");
+    }
+  }
+  std::unique_ptr<rex::ui::ImmediateDrawer> OnCreateImmediateDrawer() override {
+    if (banjo::renut_gpu::Active()) return renut::gpu::CreateOverlayDrawer();
+    return rex::ReXApp::OnCreateImmediateDrawer();
+  }
+  void OnWindowPixelSizeChanged(uint32_t pixel_width, uint32_t pixel_height) override {
+    rex::ReXApp::OnWindowPixelSizeChanged(pixel_width, pixel_height);
+    if (banjo::renut_gpu::Active()) renut::gpu::OnWindowResized();
+  }
+  std::optional<rex::PathConfig> OnFinalizePaths(const rex::PathConfig& defaults,
+                                                 std::function<void(rex::PathConfig)> resume) override {
+    if (banjo::renut_gpu::Active()) renut::gpu::StartRenderer(app_context(), [this] { return imgui_drawer(); });
+    return rex::ReXApp::OnFinalizePaths(defaults, std::move(resume));
+  }
+  void OnPostSetup() override {
+    if (banjo::renut_gpu::Active())
+      sa2::capture::StartWithSource([](rex::ui::RawImage& image) { return renut::gpu::CaptureFrame(image); });
+  }
+  void OnShutdown() override {
+    if (banjo::renut_gpu::Active()) renut::gpu::ShutdownRenderer();
+    sa2::capture::Stop();
+  }
+#endif
 
   void OnPostLaunchModule(rex::system::XThread* thread) override {
     (void)thread;
