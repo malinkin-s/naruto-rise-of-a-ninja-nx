@@ -234,6 +234,13 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   widened to the tiling extent. Result with `new_game_to_autosave1` replayed: intro, Konoha with villagers, dialogue
   portraits, tutorial boards, the night alley, HUD: all right at 30 fps, ~1,000 draws a frame in Konoha.
 
+- **Renut on the console: a whole fight (2026-10-24, shots2)**: `nxtest.sh` now gets renderer frames with the log
+  (`test_shots`, half size, `out/runs/NAME/shot_<s>.png`). Load Game -> autosave -> Naruto vs Sasuke: jutsu list,
+  match intro, the forest arena, jutsu cut-ins; the user saw no artifacts in the fight. 15-25 FPS in the fight
+  (render thread 18-45 ms, GPU 17-30 ms, ~900-1,260 draws a frame), menus 24-29 FPS. One frame
+  at a camera cut shows two shots blended with the HUD (shot_080): a crossfade or a stale resolve, to compare with
+  the PC. Note: New Game with saves on the SD asks "You may lose your autosaves" (scripted runs: use Load Game).
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
