@@ -94,22 +94,24 @@ constexpr u32 kRingDataSize = 1u << 20;
 // and the hardware path sub_8255CDA0; N&B's in brackets.
 // Byte whose 0x80 bit marks a device without GPU hardware (its device-type-2
 // path sets it); D3D's code skips hardware work for it.
-constexpr u32 kDeviceOffsetFlags = 11068;  // [10940]
+constexpr u32 kDeviceOffsetFlags = 10940;  // Naruto: KickOff 8212F608 tests bit 0x80
 constexpr u8 kDeviceFlagNoHardware = 0x80;
 // Byte whose 0x2 bit makes CDevice::SetFence (0x82278528) write each fence's
 // completion value itself instead of waiting for the GPU to. The title device
 // runs without it once created: its fences complete on the render thread.
-constexpr u32 kDeviceOffsetFlags2 = 11069;  // [10941]
+constexpr u32 kDeviceOffsetFlags2 = 10941;  // Naruto: KickOff 8212F608 sets bit 0x02
 constexpr u8 kDeviceFlagImmediateFences = 0x02;
 // Pointer to the completed-fence word IsFencePending / BlockOnFence read.
-constexpr u32 kDeviceOffsetFenceCompletion = 11024;  // [10896]
+constexpr u32 kDeviceOffsetFenceCompletion = 10896;  // Naruto: BlockOnFence 8212F708
 // Nonzero while a KickOff is in progress (BlockOnFence does not kick then).
 // sa2-nx: the word SA2's CDevice::BlockOnFence (sub_8254D6E8) tests [13232].
-constexpr u32 kDeviceOffsetInKickOff = 13600;
+constexpr u32 kDeviceOffsetInKickOff = 13216;  // Naruto: BlockOnFence 8212F708 tests +13216 before kicking
 // Side buffer (0x12C0 bytes) every device gets.
-constexpr u32 kDeviceOffsetSideBuffer = 17136;  // [16728]
+constexpr u32 kDeviceOffsetSideBuffer = 16720;  // Naruto: N&B -8, UNVERIFIED (native creation only)
 constexpr u32 kSideBufferSize = 0x12C0;
 // Set to -1 by the device-type-2 path.
+// naruto-nx: the constants below serve Renut's native Direct3D_CreateDevice, which Naruto does not use (its own
+// creation runs, then the hook takes the device over): still SA2's values.
 constexpr u32 kDeviceOffsetsMinusOne[] = {21968, 21972, 15340};  // [21560, 21564, 14936]
 constexpr u32 kDeviceTypeNoHardware = 2;
 // Copied from the global qword at 0x82F39B38 into every device.

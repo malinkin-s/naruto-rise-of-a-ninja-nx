@@ -226,7 +226,7 @@ static_assert(sizeof(ControlPacket) == 48);
 // Public D3DDevice (0x2B00 bytes in N&B's XDK) followed by the CDevice-private
 // tail of the allocation Direct3D_CreateDevice makes: 0x6080 bytes in SA2's
 // (sub_8254FC10 allocates 24704, aligned 128; N&B 0x5E00).
-constexpr u32 kDeviceAllocSize = 0x6080;
+constexpr u32 kDeviceAllocSize = 0x5780;  // Naruto: 22,400 bytes (PC base d3d/device.h:575)
 constexpr u32 kDeviceAlignment = 0x80;
 
 struct Device {
@@ -279,22 +279,22 @@ static_assert(offsetof(Device, m_ZFilter) == 0x2A8A);
 // CDevice-private fields Direct3D_CreateDevice initialises (byte offsets into
 // the allocation, from its decompilation at 0x8264DF28).
 // sa2-nx: SA2's sub_8255C808 and sub_8254FC10 (N&B 10888, 10892, 23980).
-constexpr u32 kDeviceOffsetCreationThreadId = 11016;  // GetCurrentThreadId()
-constexpr u32 kDeviceOffsetIsTitleProcess = 11020;    // KeGetCurrentProcessType() == 2
-constexpr u32 kDeviceOffsetBehaviorFlags = 24392;     // Direct3D_CreateDevice arg 4
+constexpr u32 kDeviceOffsetCreationThreadId = 10888;  // GetCurrentThreadId()  // Naruto: N&B value (PC base uses +10888)
+constexpr u32 kDeviceOffsetIsTitleProcess = 10892;    // KeGetCurrentProcessType() == 2  // Naruto: N&B value, UNVERIFIED
+constexpr u32 kDeviceOffsetBehaviorFlags = 24392;     // Direct3D_CreateDevice arg 4  // naruto-nx: SA2 value, used only by the native creation, which Naruto does not run (beyond its 0x5780-byte device)
 
 // Bound objects the Set* calls store in the CDevice-private area (guest VAs).
 // sa2-nx: SA2's "is the resource bound" test (sub_825498C8) reads every one of
 // these but the strides (sub_82565758, BeginVertices). N&B's in brackets.
-constexpr u32 kDeviceOffsetVertexDeclaration = 12240;  // SetVertexDeclaration [0x2E2C]
-constexpr u32 kDeviceOffsetIndexBuffer = 12812;        // SetIndices [0x3094]
-constexpr u32 kDeviceOffsetRenderTargets = 12816;      // SetRenderTarget, [4] [0x3098]
-constexpr u32 kDeviceOffsetDepthStencil = 12832;       // SetDepthStencilSurface [0x30A8]
-constexpr u32 kDeviceOffsetStreamSources = 12836;      // SetStreamSource, [16] [0x30AC]
-constexpr u32 kDeviceOffsetStreamStrides = 12904;      // SetStreamSource, u8[16], stride / 4 [0x30F0]
-constexpr u32 kDeviceOffsetTextures = 12920;           // SetTexture, [kTextureFetchSlots] [0x3100]
-constexpr u32 kDeviceOffsetPixelShader = 13068;        // SetPixelShader [0x3194]
-constexpr u32 kDeviceOffsetVertexShader = 13072;       // SetVertexShader [0x3198]
+constexpr u32 kDeviceOffsetVertexDeclaration = 11812;  // SetVertexDeclaration [0x2E2C]  // Naruto: PC base vertex_layout.cpp +11812 (N&B -8)
+constexpr u32 kDeviceOffsetIndexBuffer = 12428;        // SetIndices [0x3094]  // Naruto (N&B -8)
+constexpr u32 kDeviceOffsetRenderTargets = 12432;      // SetRenderTarget, [4] [0x3098]  // Naruto (N&B -8)
+constexpr u32 kDeviceOffsetDepthStencil = 12448;       // SetDepthStencilSurface [0x30A8]  // Naruto (N&B -8)
+constexpr u32 kDeviceOffsetStreamSources = 12452;      // SetStreamSource, [16] [0x30AC]  // Naruto: N&B -8, UNVERIFIED
+constexpr u32 kDeviceOffsetStreamStrides = 12520;      // SetStreamSource, u8[16], stride / 4 [0x30F0]  // Naruto (N&B -8)
+constexpr u32 kDeviceOffsetTextures = 12536;           // SetTexture, [kTextureFetchSlots] [0x3100]  // Naruto: N&B -8, UNVERIFIED
+constexpr u32 kDeviceOffsetPixelShader = 12684;        // SetPixelShader [0x3194]  // Naruto: PC base reads +12684 (N&B -8)
+constexpr u32 kDeviceOffsetVertexShader = 12688;       // SetVertexShader [0x3198]  // Naruto: PC base reads +12688 (N&B -8)
 // In m_TessellatorPacket, which holds registers 0x2280 on: VGT_HOS_CNTL
 // (tessellation mode in bits 0-1: 0 discrete, 1 continuous, 2 adaptive) and
 // the float VGT_HOS_MAX_TESS_LEVEL / VGT_HOS_MIN_TESS_LEVEL.
@@ -307,27 +307,27 @@ constexpr u32 kDeviceOffsetMinTessellationLevel = 0x2980;
 // predicated tiling (Z and render).
 // sa2-nx: 13084 by the +376 of the fields around it (N&B 0x31A4); SA2 never
 // tiles, and the renderer reads it only while tiling (PredicatedTile).
-constexpr u32 kDeviceOffsetPredication = 13084;
+constexpr u32 kDeviceOffsetPredication = 12700;  // Naruto (N&B 0x31A4 - 8; PC base pass.cpp writes ~0 there)
 // D3DCommandBuffer being recorded (BeginCommandBuffer sets, End clears).
 // sa2-nx: SA2's AllocateInlineData (sub_8254D9A8) reads it (N&B 13516).
-constexpr u32 kDeviceOffsetCommandBuffer = 13920;
+constexpr u32 kDeviceOffsetCommandBuffer = 13508;  // Naruto: N&B 0x34CC - 8, UNVERIFIED
 // The leading part of the device the draw, clear and resolve paths read (up
 // to and including kDeviceOffsetPredication); a copy of it stands in for the
 // device when a recorded command buffer is replayed.
-constexpr u32 kDeviceSnapshotSize = 13088;  // sa2-nx (N&B 0x31A8)
+constexpr u32 kDeviceSnapshotSize = 12704;  // naruto-nx: through Predication (+12700, N&B 0x31A4 - 8); SA2 13088, N&B 0x31A8
 static_assert(kDeviceOffsetVertexShader + 4 <= kDeviceSnapshotSize);
 static_assert(kDeviceOffsetPredication + 4 <= kDeviceSnapshotSize);
 // m_pRing the inline end of BeginVertices / BeginIndexedVertices restores.
 // sa2-nx: SA2's BeginVertices (sub_82565758) stores it, and the game's 11
 // inline ends load it (N&B 0x3484).
-constexpr u32 kDeviceOffsetVerticesRingEnd = 13844;
+constexpr u32 kDeviceOffsetVerticesRingEnd = 13428;  // Naruto: UNVERIFIED (Naruto BeginVertices 821375A0 reads +13428)
 // Swap bookkeeping (D3DDevice_Swap 0x82287590; SA2's sub_82558E98, which
 // also sets the pending flag in SynchronizeToPresentationInterval sub_825589D8).
-constexpr u32 kDeviceOffsetSwapCount = 16968;        // [0x40B0]
-constexpr u32 kDeviceOffsetFenceTag = 11036;         // current fence tag [0x2A9C]
-constexpr u32 kDeviceOffsetSwapFenceTag = 11056;     // fence tag at the last Swap [0x2AB0]
-constexpr u32 kDeviceOffsetPresentFenceTag = 15344;  // fence tag of the last presented frame [0x3A5C]
-constexpr u32 kDeviceOffsetSwapFlags = 11069;        // [0x2ABD]
+constexpr u32 kDeviceOffsetSwapCount = 16552;        // [0x40B0]  // Naruto: PC base frame.cpp "+16552 counts as flipped" (N&B -8)
+constexpr u32 kDeviceOffsetFenceTag = 10908;         // current fence tag [0x2A9C]  // Naruto: BlockOnFence 8212F708
+constexpr u32 kDeviceOffsetSwapFenceTag = 10928;     // fence tag at the last Swap [0x2AB0]  // Naruto: N&B value, UNVERIFIED
+constexpr u32 kDeviceOffsetPresentFenceTag = 14932;  // fence tag of the last presented frame [0x3A5C]  // Naruto: N&B -8, UNVERIFIED (PC base keeps the frame fence at +14924)
+constexpr u32 kDeviceOffsetSwapFlags = 10941;        // [0x2ABD]  // Naruto: N&B value
 constexpr u8 kSwapFlagPending = 0x10;
 
 constexpr u32 kMaxStreams = 16;

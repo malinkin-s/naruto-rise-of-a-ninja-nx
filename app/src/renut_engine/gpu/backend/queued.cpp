@@ -234,7 +234,9 @@ constexpr u32 DeltaChunkSize(u32 i) {
 // swap flags: the hooks read and write them on the live device). Their chunks are not compared; the render thread's
 // device keeps them as the frame's whole copy had them.
 constexpr u32 kDeltaUnreadEnd = kDeltaVertexF - 0x300;  // 0x480: the fetch constants' start
-constexpr u32 kDeltaPrivateUnreadBegin = 11008, kDeltaPrivateUnreadEnd = 12224;
+// naruto-nx: Naruto's private words that the render thread does not read from a snapshot: from the fence block (N&B's
+// layout, +10880) to before the vertex declaration (+11812), aligned to 64 from kDeltaTailBegin. SA2: 11008-12224.
+constexpr u32 kDeltaPrivateUnreadBegin = 10880, kDeltaPrivateUnreadEnd = 11776;
 constexpr bool DeltaChunkRead(u32 i) {
   const u32 at = DeltaChunkOffset(i);
   return !(at < kDeltaUnreadEnd || (at >= kDeltaPrivateUnreadBegin && at + 64 <= kDeltaPrivateUnreadEnd));
@@ -257,7 +259,7 @@ constexpr DeltaChunkList MakeDeltaChunkList(bool narrow) {
 }
 constexpr DeltaChunkList kDeltaAllChunks = MakeDeltaChunkList(false);
 constexpr DeltaChunkList kDeltaReadChunks = MakeDeltaChunkList(true);
-static_assert(kDeltaReadChunks.count == 40);
+static_assert(kDeltaReadChunks.count > 0 && kDeltaReadChunks.count < kDeltaAllChunks.count);  // naruto-nx: SA2's was 40
 // Whether device byte 'at' is one the render thread reads (the verify mode compares those).
 constexpr bool DeltaByteRead(u32 at) {
   return !(at < kDeltaUnreadEnd || (at >= kDeltaPrivateUnreadBegin && at < kDeltaPrivateUnreadEnd));
