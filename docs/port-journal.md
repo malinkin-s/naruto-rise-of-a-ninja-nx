@@ -31,9 +31,10 @@ From `x360-switch-ports/skill/templates/port-journal.md`. The place to think, no
 
 ## Current stage
 
-Stage: 2 (translate and sweep missed code).
+Stage: 3 (PC boot with the emulated GPU), reached the title screen and the attract demo.
 Goal: codegen clean for `default.xex` + `ai2c.dll`, the missed-code sweep (SOL-CODE-1) done, every manifest fix with
-evidence. First codegen and the SOL-CODE-1 sweep done 2026-10-24 (below). Next: the PC build of the app (stage 3).
+evidence: done 2026-10-24. Stage 3 goal: boot, menus, gameplay, cutscenes, saves on the PC (SOL-ROUTE-2). Next: input
+to get past "PRESS START" (scripted input, SOL-TEST-2), then menus and a mission.
 
 ## Known (with evidence)
 
@@ -99,6 +100,19 @@ evidence. First codegen and the SOL-CODE-1 sweep done 2026-10-24 (below). Next: 
   - Exceptions: `default` imports RtlRaiseException, RtlUnwind, RtlCaptureContext; `sub_822D837C` restores a whole
     context and jumps to r3 (EH unwinding, called from sub_822CFB70 <- sub_822CFCB8/sub_822CFE28). The SDK's
     RtlUnwind is a stub that logs `[STUB] RtlUnwind called`: watch the PC logs for it.
+
+- **First PC boots (2026-10-24)**, `app/` = the SDK's `init` template (`rexglue_setup_target(naruto GPU_PLUGINS
+  xenos)`), Linux, clang 22, Release, RTX 3050 / Vulkan (Xenos emulation), run with `tools/pc/run.sh`:
+  1. no GPU (`gpu_plugin not set`): the template builds without GPU plugins; fixed in CMake + `--gpu_plugin=xenos`;
+  2. `Failed to load shared library for module 'ai2c.dll'`: the generated registry passes the bare name
+     `naruto_AI2C`, which Windows' LoadLibrary resolves (".dll", the exe's folder) and dlopen does not. The PC base
+     is Windows-only, so it never met this. Fixed in `sdk/src/core/dynlib_posix.cpp` (lib<name>.so next to the
+     executable first; dlerror logged) — in `patches/sdk-naruto-on-sa2-fork.patch`;
+  3. boot 4 (100 s): `Module 'ai2c.dll' registered 6343 functions`; logo (20 s), title screen "PRESS START BUTTON"
+     (45 s), attract demo of Konoha (80 s); no fatal, no unregistered call, no `[STUB] RtlUnwind`; 45 pipelines;
+     audio steady (1876 frames with data per 10 s, 0 silence). Screenshots kept locally only (game content).
+  Log oddities to look at later: `game:\ERRasser.log` and `game:\Menu` opens fail (probably debug probes),
+  `ShaderDumpxe:\CompareBackEnds` (debug device), `\Device\Image` open fails after the AI2C load.
 
 ## Open questions and hypotheses
 
