@@ -12,7 +12,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -51,6 +53,17 @@ REXCVAR_DEFINE_STRING(input_script, "", "Input",
                       "first input poll (wall time). Buttons A B X Y START BACK UP DOWN LEFT RIGHT LB RB LT RT, sticks "
                       "LX+ LX- LY+ LY- RX+ RX- RY+ RY-; held 0.2 s unless a hold is given. While set, user 0 always "
                       "has a pad connected (works minimized, with no controller) and reads only the script")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// naruto-nx (2026-10-24): recording a player's pad for repeatable test runs, and playing it back (the idea and the
+// input clock of naruto-rise-recomp's input_replay.cpp, GPL-3.0; a simpler format).
+REXCVAR_DEFINE_STRING(input_record, "", "Input",
+                      "Test automation: write every change of user 0's pad (connection, buttons, triggers, sticks) to "
+                      "this file, timed on the input clock (advances only while the game reads input, at most 100 ms "
+                      "between two reads, so loads that do not poll do not shift what follows)")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_STRING(input_replay, "", "Input",
+                      "Test automation: play an input_record file back as user 0's pad (the real pads are not read "
+                      "for user 0; works minimized). Takes precedence over input_script")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(input_rumble, false, "Input",
                     "Controller vibration (off by default: controllers only get "
@@ -300,6 +313,105 @@ ScriptedPress ScriptedState() {
 }
 }  // namespace
 
+namespace {
+// input_record / input_replay. File format, one line each: "NXINPUT 1" first, then
+// "S <input clock us> <connected 0|1> <buttons hex> <lt> <rt> <lx> <ly> <rx> <ry>" for each change.
+struct RecordedState {
+  uint64_t us = 0;
+  bool connected = false;
+  uint16_t buttons = 0;
+  uint8_t lt = 0, rt = 0;
+  int16_t lx = 0, ly = 0, rx = 0, ry = 0;
+  bool SameInput(const RecordedState& o) const {
+    return connected == o.connected && buttons == o.buttons && lt == o.lt && rt == o.rt && lx == o.lx &&
+           ly == o.ly && rx == o.rx && ry == o.ry;
+  }
+};
+// Microseconds of input reads: each read adds the time since the previous one, at most 100 ms.
+uint64_t InputClockUs() {
+  static std::mutex mutex;
+  static bool started = false;
+  static std::chrono::steady_clock::time_point last;
+  static uint64_t elapsed = 0;
+  std::lock_guard lock(mutex);
+  const auto now = std::chrono::steady_clock::now();
+  if (started) {
+    const int64_t gap = std::chrono::duration_cast<std::chrono::microseconds>(now - last).count();
+    elapsed += uint64_t(std::clamp<int64_t>(gap, 0, 100000));
+  }
+  started = true;
+  last = now;
+  return elapsed;
+}
+const std::vector<RecordedState>& ReplayStates() {
+  static const std::vector<RecordedState> states = [] {
+    std::vector<RecordedState> out;
+    const std::string path = REXCVAR_GET(input_replay);
+    if (path.empty()) return out;
+    std::FILE* f = std::fopen(path.c_str(), "r");
+    if (!f) {
+      REXLOG_ERROR("input_replay: cannot open {}", path);
+      return out;
+    }
+    char line[256];
+    while (std::fgets(line, sizeof(line), f)) {
+      unsigned long long us;
+      int connected, lt, rt, lx, ly, rx, ry;
+      unsigned buttons;
+      if (std::sscanf(line, "S %llu %d %x %d %d %d %d %d %d", &us, &connected, &buttons, &lt, &rt, &lx, &ly, &rx,
+                      &ry) != 9)
+        continue;
+      out.push_back({uint64_t(us), connected != 0, uint16_t(buttons), uint8_t(lt), uint8_t(rt), int16_t(lx),
+                     int16_t(ly), int16_t(rx), int16_t(ry)});
+    }
+    std::fclose(f);
+    REXLOG_INFO("input_replay: {} states from {} ({:.1f} s of input clock)", out.size(), path,
+                out.empty() ? 0.0 : out.back().us / 1e6);
+    if (out.empty()) out.push_back({});  // a valid but empty file still replaces the real pads
+    return out;
+  }();
+  return states;
+}
+// The replayed state at the input clock's now.
+RecordedState ReplayNow() {
+  const auto& states = ReplayStates();
+  static size_t index = 0;
+  static bool ended = false;
+  const uint64_t now = InputClockUs();
+  while (index + 1 < states.size() && states[index + 1].us <= now) ++index;
+  if (!ended && index + 1 == states.size() && now >= states.back().us) {
+    ended = true;
+    REXLOG_INFO("input_replay: last recorded state reached at {:.1f} s", now / 1e6);
+  }
+  return states[index].us <= now ? states[index] : RecordedState{};
+}
+void RecordState(const RecordedState& state) {
+  static std::FILE* file = [] {
+    const std::string path = REXCVAR_GET(input_record);
+    std::FILE* f = path.empty() ? nullptr : std::fopen(path.c_str(), "w");
+    if (f) {
+      std::fputs("NXINPUT 1\n", f);
+      std::fflush(f);
+      REXLOG_INFO("input_record: writing user 0's pad to {}", path);
+    } else if (!path.empty()) {
+      REXLOG_ERROR("input_record: cannot create {}", path);
+    }
+    return f;
+  }();
+  if (!file) return;
+  static RecordedState last;
+  static bool first = true;
+  RecordedState s = state;
+  s.us = InputClockUs();
+  if (!first && s.SameInput(last)) return;
+  first = false;
+  last = s;
+  std::fprintf(file, "S %llu %d %04x %u %u %d %d %d %d\n", (unsigned long long)s.us, s.connected ? 1 : 0, s.buttons,
+               s.lt, s.rt, s.lx, s.ly, s.rx, s.ry);
+  std::fflush(file);  // a killed run keeps everything up to its last change
+}
+}  // namespace
+
 const DeviceInfo* InputSystem::DeviceInfoFor(DeviceId id) const {
   for (const auto& device : devices_) {
     if (device.id == id) {
@@ -312,7 +424,7 @@ const DeviceInfo* InputSystem::DeviceInfoFor(DeviceId id) const {
 X_RESULT InputSystem::GetCapabilities(uint32_t user_index, uint32_t flags,
                                       X_INPUT_CAPABILITIES* out_caps) {
   SCOPE_profile_cpu_f("hid");
-  if (out_caps && user_index == 0 && !InputScript().empty()) {  // input_script: a standard pad
+  if (out_caps && user_index == 0 && (!ReplayStates().empty() || !InputScript().empty())) {  // a standard pad
     std::memset(out_caps, 0, sizeof(*out_caps));
     out_caps->type = 0x01;      // XINPUT_DEVTYPE_GAMEPAD
     out_caps->sub_type = 0x01;  // XINPUT_DEVSUBTYPE_GAMEPAD
@@ -357,6 +469,28 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
   SCOPE_profile_cpu_f("hid");
   if (const ReadHook hook = g_read_hook.load(std::memory_order_acquire))
     hook();  // sa2-nx (2026-10-20): Renut's late input and latency probe (banjo-nx's input latency set)
+  if (user_index == 0 && !ReplayStates().empty()) {  // input_replay: only the recorded pad
+    const RecordedState s = ReplayNow();
+    if (!s.connected) return X_ERROR_DEVICE_NOT_CONNECTED;
+    static uint32_t packet = 1;
+    static RecordedState last;
+    if (!s.SameInput(last)) {
+      last = s;
+      ++packet;
+    }
+    if (out_state) {
+      std::memset(out_state, 0, sizeof(*out_state));
+      out_state->packet_number = packet;
+      out_state->gamepad.buttons = s.buttons;
+      out_state->gamepad.left_trigger = s.lt;
+      out_state->gamepad.right_trigger = s.rt;
+      out_state->gamepad.thumb_lx = s.lx;
+      out_state->gamepad.thumb_ly = s.ly;
+      out_state->gamepad.thumb_rx = s.rx;
+      out_state->gamepad.thumb_ry = s.ry;
+    }
+    return X_ERROR_SUCCESS;
+  }
   if (user_index == 0 && !InputScript().empty()) {  // input_script: only the scripted input
     const ScriptedPress s = ScriptedState();
     static uint32_t packet = 1;
@@ -408,6 +542,11 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
     }
   }
 
+  if (user_index == 0 && !REXCVAR_GET(input_record).empty()) {  // input_record
+    const auto& g = merged.gamepad;
+    RecordState({0, any, uint16_t(g.buttons), uint8_t(g.left_trigger), uint8_t(g.right_trigger),
+                 int16_t(g.thumb_lx), int16_t(g.thumb_ly), int16_t(g.thumb_rx), int16_t(g.thumb_ry)});
+  }
   if (!any) {
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }

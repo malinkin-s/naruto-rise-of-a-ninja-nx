@@ -3,11 +3,14 @@
 #   tools/pc/scripted.sh NAME SECONDS 'input script' 'shot times...'
 #   e.g. tools/pc/scripted.sh title 60 '10:START,20:A' '15 25 40'
 # Input script format: 'seconds:button[:hold],...' from the first input poll (sdk input_system.cpp).
+# REPLAY=<file.nxinput> (optional): play a recorded pad session (tools/pc/record.sh) instead of the input script.
 # SAVE=<dir> (optional): a snapshot of user data (out/saves/<name>) copied into the run's own user data root, so every
 # run starts from the same saves (empty without it).
 # Output: out/runs/NAME/{boot.log,shot_<t>.png,sheet.jpg,user/}. Screenshots are game content: they stay in out/ (ignored).
 set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
+[ -n "$REPLAY" ] && REPLAY=$(realpath "$REPLAY")
+[ -n "$SAVE" ] && SAVE=$(realpath "$SAVE")
 #   tools/pc/scripted.sh NAME tools/pc/scenarios/<x>.sh       (a scenario file sets SCRIPT, SECS, SHOTS)
 if [ -f "$2" ]; then . "$2"; name=$1; secs=$SECS; script=$SCRIPT; shots=$SHOTS
 else name=$1; secs=$2; script=$3; shots=$4; fi
@@ -17,7 +20,8 @@ mkdir -p "$dir/user"
 cd "$root/out/pc"
 export LD_LIBRARY_PATH="$root/sdk/out/linux-amd64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 timeout "$secs" ./naruto --game_data_root="$root/game" --gpu_plugin=xenos --log_file="$dir/boot.log" --user_data_root="$dir/user" \
-  --input_script="$script" > "$dir/stdout.txt" 2>&1 &
+  $( [ -n "$REPLAY" ] && echo "--input_replay=$REPLAY" || echo "--input_script=$script" ) \
+  > "$dir/stdout.txt" 2>&1 &
 tpid=$!
 sleep 2
 pid=$(pgrep -P "$tpid" -x naruto || pgrep -n -x naruto)
@@ -45,4 +49,4 @@ if [ -n "$shots_png" ]; then
   magick montage $(ls "$dir"/t_shot_*.png | sort -t_ -k3 -g) -tile 4x -geometry +3+3 "$dir/sheet.jpg"
   rm -f "$dir"/t_shot_*.png
 fi
-grep -iE "\[error\]|fatal|unregistered|RtlUnwind|input_script" "$dir/boot.log" | cut -c27-200 | sort | uniq -c | sort -rn | head -12
+grep -iE "\[error\]|fatal|unregistered|RtlUnwind|input_script|input_replay" "$dir/boot.log" | cut -c27-200 | sort | uniq -c | sort -rn | head -12
