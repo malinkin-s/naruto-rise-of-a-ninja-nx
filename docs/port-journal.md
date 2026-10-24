@@ -297,6 +297,18 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   00:02): a crash at exit, not decoded (those ELFs were overwritten). `nxtest.sh` now keeps each run's ELF and
   `tools/switch/nx_crashes.py` fetches the run's reports and names the game's addresses (needs the FTP server on).
 
+- **Codegen step 3 (2026-10-25, opt7b, opt8)**: LTO on top of step 2 (direct calls now inlinable across files): game
+  thread ~18.4 -> ~18.0 ms a frame (2 %, +5 min of build): kept off for iterations. Step 3, `non_volatile_as_local` +
+  `elide_lr_stores` (r14-r31, f14-f31, v14-v31/v64-v127 as C++ locals: no __savegprlr/__restgprlr, no ctx.lr store
+  before each call). `tools/read_before_write.py` (--noreturn=822CC220, the guest longjmp) listed 50: setjmp copies
+  into `env` and `xor rX,rX,rX` (false alarms), the guest setjmp sub_822CC540, AI2C's mfcr savers sub_88397C70 /
+  sub_88397D88, 27 default.xex functions that all open with their own prologue (mflr + __savegprlr: reads on paths
+  the dataflow cannot rule out, left unmarked, as share_registers on a normal function corrupts its callers), and one
+  real piece, AI2C's sub_88398D20 (a copy loop body reading its parent's ctr): `share_registers` in the new
+  `app/ai2c-overrides.toml` (AI2C only). NRO 40.8 MB. opt8 (GPU set to 768 MHz by the user): game thread ~17.5 ->
+  ~11 ms CPU a frame (classic ~23.4: -53 %), fights 46-54 FPS (gpu768, classic: 34-39), GPU-bound again (~20 ms),
+  frames right, no crash.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
@@ -336,3 +348,4 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 | 2026-10-24 | lto768: + LTO | 1020 / 768 / 1600 | fight vs Sasuke | 33-39 FPS | 25-30 ms, 87 % CPU | 13-18 ms | 15-21 ms |
 | 2026-10-25 | opt3: codegen step 1 | 1020 / 460.8 / 1600 | fight vs Sasuke | 31-42 FPS | ~21.5 ms CPU a frame | 8-17 ms | 21-31 ms |
 | 2026-10-25 | opt6: + step 2, -fno-strict-aliasing, -ffp-contract=off | 1020 / 460.8 / 1600 | fight vs Sasuke | 31-45 FPS | ~17.5 ms CPU a frame | | |
+| 2026-10-25 | opt8: + step 3 (non_volatile_as_local, elide_lr_stores) | 1020 / 768 / 1600 (set by hand) | fight vs Sasuke | 46-54 FPS | ~11 ms CPU a frame | 8-13 ms | 17-22 ms |

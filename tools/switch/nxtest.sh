@@ -43,8 +43,8 @@ echo "console $NX_IP, log to $host:$port, args: ${args[*]}"
 pkill -f "python3 -I - $port " 2>/dev/null && sleep 1
 # The listener: the game's log (one connection, written as it arrives) and its frames (test_shots: one connection
 # each, "NXSHOT <s> <w> <h> <bytes>" then RGBX rows -> shot_<s>.png). Ends when the log connection closes or after
-# SECONDS + 120.
-python3 -I - "$port" "$dir" $((secs + 120)) <<'PY' &
+# SECONDS + 120 + NX_WAIT (the netloader wait counts too).
+python3 -I - "$port" "$dir" $((secs + 120 + ${NX_WAIT:-900})) <<'PY' &
 import socket, subprocess, sys, threading, time
 port, out, limit = int(sys.argv[1]), sys.argv[2], float(sys.argv[3])
 s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -114,7 +114,12 @@ def handle(c, addr):
     c.close()
     log_done.set()
 
-while time.monotonic() < deadline and not log_done.is_set():
+# After the log closes, 3 s more for connections already on their way (the profile report is sent right before
+# the game quits: its connection can still be in the backlog).
+grace = None
+while time.monotonic() < deadline and (grace is None or time.monotonic() < grace):
+    if grace is None and log_done.is_set():
+        grace = time.monotonic() + 3
     try:
         c, addr = s.accept()
     except socket.timeout:

@@ -1,0 +1,11 @@
+# AI2C.dll: per-function code generation marks (included by the AI2C module only: a [functions] entry in a file both
+# modules include would make a stub in the other one).
+#
+# tools/read_before_write.py on code generated with non_volatile_as_local (codegen_flavor.toml step 3), 2026-10-25:
+# default.xex lists 27 functions besides the guest setjmp, each with its own prologue (mflr, __savegprlr): reads on
+# paths the dataflow cannot rule out (correlated conditions), false alarms, so not marked (share_registers on a normal
+# function corrupts its callers' registers, sa2-nx). AI2C: sub_88397C70 / sub_88397D88 save cr0-cr7 (mfcr, setjmp-like;
+# the same known risk as cr_as_local in sa2-nx), and this one:
+[functions]
+"0x88398D20" = { share_registers = true }  # 31 lines, no prologue: a byte-swapping copy loop body (bdnz to itself)
+# that reads ctr set by its parent; registered as an entry, called by nobody directly.

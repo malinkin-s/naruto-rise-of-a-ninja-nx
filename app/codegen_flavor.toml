@@ -19,3 +19,9 @@ reserved_as_local = true
 skip_msr = true
 dform_disp_split = true
 fctiwz_inline = true
+# Step 3 (sa2-nx round 7, masseffect-nx's "diet": -10 % main thread): r14-r31, f14-f31, v14-v31/v64-v127 as C++
+# locals (no __savegprlr/__restgprlr, no guest-stack traffic for them) and no `ctx.lr = <return address>` before every
+# call. A function that reads one of them before writing it (a split piece or a funclet that uses its parent's
+# registers) must be marked share_registers: tools/read_before_write.py on the generated code lists them.
+non_volatile_as_local = true
+elide_lr_stores = true
