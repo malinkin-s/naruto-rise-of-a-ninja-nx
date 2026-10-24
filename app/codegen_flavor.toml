@@ -1,0 +1,21 @@
+# Code generation options for speed (sa2-nx app/perf_overrides.toml, its "optimised codegen" flavour, first part).
+# Root keys, included by both modules of naruto_manifest.toml. Build-time: measured as an A/B pair on the console.
+#
+# Only options that change how the C++ is written, so the compiler can keep guest state in host registers and drop
+# dead stores; the guest-visible result is the same (masseffect-nx measured, UnleashedRecomp-NX / sa2-nx ship them):
+#   - cr0-cr7, ctr, xer and the lwarx reservation as C++ locals. Risk shared with sa2-nx: after a guest longjmp ReXGlue
+#     restores ctx, not these locals (the setjmp caller must recompute them, as MSVC code does);
+#   - skip_msr: no mfmsr/mtmsrd fences, ctx.msr stores or global lock around guest atomic sequences (stwcx. is
+#     already a compare-and-swap);
+#   - dform_disp_split: D-form loads/stores as base + zext(reg) + disp (differs only when reg + disp crosses 2^32,
+#     a guest fault either way);
+#   - fctiwz_inline: fctiwz as fcvtzs + NaN select.
+# Not yet (need audits of this game's code, sa2-nx docs/enhancements.md): non_volatile_as_local, elide_lr_stores,
+# non_argument_as_local, and the post-codegen steps (no-volatile guest memory with loop barriers, direct calls).
+cr_as_local = true
+ctr_as_local = true
+xer_as_local = true
+reserved_as_local = true
+skip_msr = true
+dform_disp_split = true
+fctiwz_inline = true

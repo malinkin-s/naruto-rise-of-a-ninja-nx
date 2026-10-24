@@ -1000,6 +1000,24 @@ void ProfilerMain(void*) {
   // overlay's FPS and resolution keep going.
   const bool report = rex::cvar::GetFlagByName("switch_profile_report") != "false";
   if (!report) sample_stacks = false;
+  // naruto-nx (2026-10-24): the title's cvar switch_profile_threads, comma-separated thread name prefixes: only those
+  // threads are sampled (empty: every busy thread). Pausing every thread cut the game's network log (nxlink test
+  // runs) after 18 s and the run never quit; sampling only the game and render threads keeps the sockets alone.
+  std::vector<std::string> sample_only;
+  {
+    const std::string list = rex::cvar::GetFlagByName("switch_profile_threads");
+    for (size_t at = 0; at < list.size();) {
+      const size_t end = std::min(list.find(',', at), list.size());
+      if (end > at) sample_only.push_back(list.substr(at, end - at));
+      at = end + 1;
+    }
+  }
+  const auto sampled = [&sample_only](const char* name) {
+    if (sample_only.empty()) return true;
+    for (const std::string& prefix : sample_only)
+      if (std::strncmp(name, prefix.c_str(), prefix.size()) == 0) return true;
+    return false;
+  };
 
   u64 counters_last[kCounterCount]{};
   for (unsigned i = 0; i < kCounterCount; ++i) {
@@ -1036,7 +1054,7 @@ void ProfilerMain(void*) {
       rr = (rr + 1) % kMaxThreads;
       Slot& s = g_slots[idx];
       const u32 h = s.handle.load();
-      if (!h || !s.busy) {
+      if (!h || !s.busy || !sampled(s.name)) {
         continue;
       }
       if (R_FAILED(svcSetThreadActivity(h, ThreadActivity_Paused))) {

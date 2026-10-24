@@ -29,11 +29,15 @@ shots=${NX_SHOTS:-$(seq -s ' ' 20 20 $((secs - 5)))}
 [ -n "$shots" ] && args+=(--test_shots="${shots// /,}")
 # NX_PROFILE=1: the SDK's profiler samples each busy thread's stack at 1 kHz (sdk/src/ui/switch_perf.cpp); its report
 # (logs/rex/rex_profile.log, always written) comes back at the end of the run as rex_profile.log.
-[ "$NX_PROFILE" = 1 ] && args+=(--switch_profile_stacks=true)
+# Only the threads named in NX_PROFILE_THREADS (name prefixes, comma separated, no spaces; default the game's main
+# thread): pausing every thread cut the network log.
+[ "$NX_PROFILE" = 1 ] && args+=(--switch_profile_stacks=true --switch_profile_threads="${NX_PROFILE_THREADS:-Main}")
 [ -n "$script" ] && args+=(--input_script="$script")
 args+=("$@")
 echo "console $NX_IP, log to $host:$port, args: ${args[*]}"
 
+# A listener left by an earlier run (a crashed game never closes its log connection) still holds the port.
+pkill -f "python3 -I - $port " 2>/dev/null && sleep 1
 # The listener: the game's log (one connection, written as it arrives) and its frames (test_shots: one connection
 # each, "NXSHOT <s> <w> <h> <bytes>" then RGBX rows -> shot_<s>.png). Ends when the log connection closes or after
 # SECONDS + 120.

@@ -108,6 +108,17 @@ bool SendFile(const std::string& target, const std::string& path, const std::str
 void StartTestShots() {
   const std::string list = REXCVAR_GET(test_shots);
   const std::string target = rex::cvar::GetFlagByName("log_network");
+#if defined(__SWITCH__)
+  // The crash report of an earlier run (the SDK writes logs/rex/rex_crash.log on an abort or a fatal exception; the
+  // network log ends before it): sent once, then renamed so the next run does not send it again.
+  if (!target.empty()) {
+    const std::string crash = std::string(RexSwitchLogDir()) + "rex_crash.log";
+    if (SendFile(target, crash, "rex_crash_previous.log")) {
+      REXLOG_INFO("test files: {} of an earlier run sent", crash);
+      std::rename(crash.c_str(), (std::string(RexSwitchLogDir()) + "rex_crash.sent.log").c_str());
+    }
+  }
+#endif
   if (list.empty()) return;
   if (target.empty()) {
     REXLOG_WARN("test_shots: no log_network listener to send the frames to");

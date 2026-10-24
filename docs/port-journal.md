@@ -269,6 +269,16 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   no change (26 ms a frame, 87 %); `NARUTO_SWITCH_LTO` stays in CMake, off. Next for the CPU: where the game thread
   spends its time (needs stack samples that do not break the network log), then direct calls / AI2C in LTO.
 
+- **Game thread profile and codegen options (2026-10-25, prof5, opt1-3)**: stack sampling limited to named threads
+  (`switch_profile_threads`, new in sdk/src/ui/switch_perf.cpp; `NX_PROFILE=1` samples "Main") keeps the network
+  log alive. The game thread in fights: 85 % of samples in recompiled default.xex code, 5 % AI2C, 9.5 % the runtime
+  (FunctionDispatcher::GetFunction 1 %, critical sections, the guest heap); flat (top function 4 %). First part of
+  sa2-nx's optimised flavour in `app/codegen_flavor.toml` (cr/ctr/xer/reserved as locals, skip_msr,
+  dform_disp_split, fctiwz_inline): NRO 54.3 -> 49.1 MB, game thread CPU in fights ~23.4 -> ~21.5 ms a frame (gpu1
+  against opt3, both 460.8 MHz). opt1 ended ~1 s after the audio start in an Atmosphere panic "std::abort (0xFFE)"
+  (no rex_crash.log: not the SDK's abort); opt2 and opt3 passed the same point: not reproduced, watch it. Test runs
+  now send an earlier run's rex_crash.log at start (`rex_crash_previous.log`).
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |

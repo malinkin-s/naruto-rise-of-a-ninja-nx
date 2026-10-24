@@ -29,6 +29,10 @@ REXCVAR_DEFINE_BOOL(sa2_noncpu_enhancements, true, "SA2 enhancements",
 REXCVAR_DEFINE_BOOL(switch_profile_stacks, false, "SA2 enhancements",
                     "Switch: CPU stack sampling every 1 ms (rex_profile.log), as logs/rex/stacks_profile.flag does")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// naruto-nx (2026-10-24): which threads the sampler pauses (comma-separated name prefixes; empty = every busy one).
+REXCVAR_DEFINE_STRING(switch_profile_threads, "", "SA2 enhancements",
+                      "Switch: only threads whose names start with one of these (comma separated) are stack-sampled")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 // 2026-10-08: the profiler's 10-second report (logs/rex/rex_profile.log) at all. Off in the release's built-in
 // settings (no logs/ folder); the test configs turn it on. The overlay's FPS does not depend on it.
 REXCVAR_DEFINE_BOOL(switch_profile_report, true, "SA2 enhancements",
