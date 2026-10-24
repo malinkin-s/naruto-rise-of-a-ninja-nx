@@ -169,6 +169,15 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   Result: `out/nx/naruto.nro` 46 MB (text 45.5 MB, bss 5.3 MB), `_start` at 0, both AI2C entry points present.
   `tools/switch/package.sh` makes `out/nx/sdcard/switch/naruto-nx/{naruto.nro, game/}`.
 
+- **Automated console runs over nxlink (2026-10-24)**: `NX_IP=<console> tools/switch/nxtest.sh NAME SECONDS ['input
+  script'] [--cvar=...]` sends `out/nx/naruto.nro` with nxlink (from the Docker image, `--network host`) to hbmenu's
+  netloader, written to `sdmc:/switch/naruto-nx/naruto.nro`, with `--log_network=<PC>:28780` (the SDK's TCP log
+  sink: every log line plus stdout/stderr), `--test_exit_after_s=SECONDS` (new, `app/src/naruto_test_exit.cpp`:
+  closes the window on the UI thread, so ReXApp::OnClosing terminates the title and exits; a hard exit 15 s later if
+  the title hangs; checked on the PC: "Window closing ... Title terminated" at 20 s) and the optional input script. A
+  Python listener writes `out/runs/NAME/nx.log`; the script ends with an error summary. Needs: hbmenu with title
+  override + Y, the game already on the SD, TCP 28780 open on the PC (ufw).
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |

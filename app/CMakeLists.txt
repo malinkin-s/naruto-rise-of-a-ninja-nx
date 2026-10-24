@@ -22,6 +22,7 @@ include(generated/rexglue.cmake)
 
 set(NARUTO_SOURCES
     src/main.cpp
+    src/naruto_test_exit.cpp
 )
 if(REXGLUE_PLATFORM_SWITCH)
     list(APPEND NARUTO_SOURCES src/naruto_static_modules.cpp src/naruto_no_gpu_plugin.cpp)

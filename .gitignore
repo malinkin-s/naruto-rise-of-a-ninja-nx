@@ -52,3 +52,4 @@ ref/
 *.log
 /cache/
 __pycache__/
+tools/switch/nx.env
