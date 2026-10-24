@@ -876,7 +876,27 @@ REXCVAR_DEFINE_BOOL(sa2_renut_core_layout, true, "SA2/Renderer",
                     "core 1), so no game thread time-slices with it. Off: every guest thread on any core, as before")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
+REXCVAR_DEFINE_STRING(naruto_debug_present, "", "Naruto/Debug",
+                      "Debug: present this guest texture (hex address) instead of the game's front buffer");
+
 void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
+  if (static const u32 forced = u32(std::strtoul(REXCVAR_GET(naruto_debug_present).c_str(), nullptr, 16)); forced)
+    front_buffer = forced;
+  // naruto-nx (2026-10-24, temporary): the window packet and the viewport words Renut reads, at a few Swaps.
+  {
+    static uint32_t n = 0;
+    if (++n == 300 || n == 600) {
+      const auto *w = GuestPtr<const be_u32>(device_va);
+      RGPU_INFO("[naruto] window offset {:08X} scissor TL {:08X} BR {:08X}; surface info {:08X} color0 {:08X} "
+                "screen scissor {:08X} {:08X}; vte {:08X} mode {:08X}", u32(w[0x28C0 / 4]), u32(w[0x28C4 / 4]),
+                u32(w[0x28C8 / 4]), u32(w[0x2880 / 4]), u32(w[0x2884 / 4]), u32(w[0x28B8 / 4]), u32(w[0x28BC / 4]),
+                u32(w[0x294C / 4]), u32(w[0x2948 / 4]));
+      auto f = [w](u32 off) { const u32 bits = w[off / 4]; float v; std::memcpy(&v, &bits, 4); return v; };
+      RGPU_INFO("[naruto] packet viewport x {} {} y {} {} z {} {}; private +12640: {} {} {} {} {} {}", f(0x2908),
+                f(0x290C), f(0x2910), f(0x2914), f(0x2918), f(0x291C), f(12640), f(12644), f(12648), f(12652),
+                f(12656), f(12660));
+    }
+  }
   // sa2-nx (2026-10-20, sa2_renut_core_layout, the Switch): once, the guest main thread (SA2's game and drawing thread,
   // about a core of work in City Escape) alone on core 0, the other guest threads on cores 1-2 (preferring 2: the
   // render thread is pinned to core 1 at a higher priority). Before, every guest thread could run on any core, and at

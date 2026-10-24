@@ -645,6 +645,8 @@ BANJO_RENUT_HOOK_SHARED(sub_82565758, D3DDevice_BeginVertices_hook);  // D3DDevi
 // the fences and the texture headers stay its own).
 // ---------------------------------------------------------------------------
 REX_EXTERN(__imp__sub_82131018);
+REXCVAR_DEFINE_BOOL(naruto_debug_clear_color, false, "Naruto/Debug",
+                    "Debug: every ClearF clears to red (whether the resolve and present path shows anything)");
 REX_EXTERN(__imp__sub_821398C8);
 namespace {
 
@@ -662,6 +664,11 @@ void NarutoClearF(PPCContext &ctx, uint8_t *base) {
   float color[4] = {0, 0, 0, 0};
   if (color_va)
     ReadVector4(color_va, color);
+  if (REXCVAR_GET(naruto_debug_clear_color)) {  // bisect: red clears show whether the present path carries anything
+    color[0] = 1.0f;
+    color[1] = color[2] = 0.0f;
+    color[3] = 1.0f;
+  }
   QueueHostClear(device, flags, has_rect ? &rect : nullptr, color, float(ctx.f1.f64), ctx.r8.u32);
   __imp__sub_82131018(ctx, base);
 }
