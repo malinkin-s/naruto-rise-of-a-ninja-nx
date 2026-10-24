@@ -225,6 +225,15 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
     (the user's diagnosis: /dev/shm exhausted by other software, an NVIDIA EGL readback crash), and so was the
     game's SIGBUS (guest memory pages failing while RAM was short): check `free` and `df /dev/shm` before runs.
 
+- **Renut: gameplay renders in full (2026-10-24, PC)**: Naruto's scene is tiled (1280x256 4x MSAA target, 3 tiles;
+  BeginTiling 8213A7E0, EndTiling 8213AC80 resolving each tile through D3DDevice_Resolve). Hooks: around Naruto's own
+  BeginTiling the renderer's targets cover every tile (SetTilingExtentLocked / SetTilesLocked, as Renut's N&B hooks
+  do; N&B's native ports of the two functions carry N&B offsets, so they are not used), cleared at EndTiling. Then
+  tiles 2-3 stayed black: BeginTiling's own clear covers one tile (the console reuses one tile of EDRAM), so the host
+  target's lower tiles kept stale depth and their geometry failed the depth test; the clear inside BeginTiling is
+  widened to the tiling extent. Result with `new_game_to_autosave1` replayed: intro, Konoha with villagers, dialogue
+  portraits, tutorial boards, the night alley, HUD: all right at 30 fps, ~1,000 draws a frame in Konoha.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |

@@ -645,6 +645,13 @@ BANJO_RENUT_HOOK_SHARED(sub_82565758, D3DDevice_BeginVertices_hook);  // D3DDevi
 // the fences and the texture headers stay its own).
 // ---------------------------------------------------------------------------
 REX_EXTERN(__imp__sub_82131018);
+REXCVAR_DEFINE_BOOL(naruto_debug_tile_noclear, false, "Naruto/Debug",
+                    "Debug: tile resolves inside EndTiling do not clear their source afterwards (flags 0x300 dropped)");
+std::atomic<bool> g_naruto_in_end_tiling{false};
+// BeginTiling's own clear covers one tile (the console's EDRAM is shared by the tiles in turn); the host target covers
+// every tile, so inside BeginTiling the clear is widened to the tiling extent (else the lower tiles keep stale depth
+// and their geometry fails the depth test).
+std::atomic<uint32_t> g_naruto_begin_tiling_extent{0};  // (height << 16) | width while inside BeginTiling, else 0
 REXCVAR_DEFINE_BOOL(naruto_debug_clear_color, false, "Naruto/Debug",
                     "Debug: every ClearF clears to red (whether the resolve and present path shows anything)");
 REX_EXTERN(__imp__sub_821398C8);
@@ -660,7 +667,11 @@ void NarutoClearF(PPCContext &ctx, uint8_t *base) {
     RGPU_INFO("[naruto] ClearF #{}: device {:#x} flags {:#x} rect {:#x} color {:#x} z {} stencil {}", n, device, flags,
               rect_va, color_va, ctx.f1.f64, ctx.r8.u32);
   ClearRect rect;
-  const bool has_rect = rect_va && ReadRect(rect_va, rect);
+  bool has_rect = rect_va && ReadRect(rect_va, rect);
+  if (const uint32_t extent = g_naruto_begin_tiling_extent.load(std::memory_order_relaxed)) {
+    rect = ClearRect{0, 0, i32(extent & 0xFFFF), i32(extent >> 16)};
+    has_rect = true;
+  }
   float color[4] = {0, 0, 0, 0};
   if (color_va)
     ReadVector4(color_va, color);
@@ -692,8 +703,11 @@ void NarutoResolve(PPCContext &ctx, uint8_t *base) {
     dest_x = i32(u32(p[0]));
     dest_y = i32(u32(p[1]));
   }
-  QueueHostResolve(device, flags, has_rect ? &rect : nullptr, dest_texture, dest_x, dest_y, dest_level, dest_slice,
-                   color_va, float(ctx.f1.f64), clear_stencil);
+  u32 resolve_flags = flags;
+  if (g_naruto_in_end_tiling.load(std::memory_order_relaxed) && REXCVAR_GET(naruto_debug_tile_noclear))
+    resolve_flags &= ~0x300u;
+  QueueHostResolve(device, resolve_flags, has_rect ? &rect : nullptr, dest_texture, dest_x, dest_y, dest_level,
+                   dest_slice, color_va, float(ctx.f1.f64), clear_stencil);
   __imp__sub_821398C8(ctx, base);
 }
 
@@ -724,8 +738,9 @@ void NoteNarutoDraw(int kind, const PPCContext &ctx) {
   static const char *const kNames[] = {"DrawIndexedVertices", "DrawVertices", "BeginVertices"};
   const uint32_t n = g_naruto_draw_calls[kind].fetch_add(1) + 1;
   if (n <= 3 || (n & (n - 1)) == 0)
-    RGPU_INFO("[naruto] {} #{}: r4 {} r5 {} r6 {} r7 {}; predication {:08X} {:08X} {:08X} tile predication {:08X} "
-              "flags {:08X}", kNames[kind], n, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32,
+    RGPU_INFO("[naruto] {} #{}: window {:08X} {:08X} {:08X}; r4 {} r5 {} r6 {} r7 {}; predication {:08X} {:08X} {:08X} "
+              "tile predication {:08X} flags {:08X}", kNames[kind], n, LoadU32(ctx.r3.u32 + 0x28C0),
+              LoadU32(ctx.r3.u32 + 0x28C4), LoadU32(ctx.r3.u32 + 0x28C8), ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32,
               LoadU32(ctx.r3.u32 + native::off::Predication), LoadU32(ctx.r3.u32 + native::off::RunPredicationState),
               LoadU32(ctx.r3.u32 + native::off::PredicationSet), LoadU32(ctx.r3.u32 + native::off::TilePredication),
               LoadU32(ctx.r3.u32 + native::off::Flags));
@@ -758,4 +773,50 @@ BANJO_RENUT_HOOK_RAW(sub_821375A0) {
   NoteNarutoDraw(2, ctx);
   NoteBoundDeclaration(ctx.r3.u32);
   ctx.r3.u64 = D3DDevice_BeginVertices_hook(ctx.r3.u32, 5, 4, 20);
+}
+
+// naruto-nx (2026-10-24): Naruto's tiling. Its scene is drawn once into a 1280x256 target, 4x MSAA, three tiles
+// (BeginTiling 8213A7E0, LTCG-specialised to Count 3 and the tile table at 0x82081798 in r5/r6; EndTiling 8213AC80,
+// which resolves each tile through D3DDevice_Resolve, hooked above). On the console the GPU replays the draws per tile;
+// here, as Renut's N&B hooks do, the targets bound between the two cover every tile (SetTilingExtentLocked) and each
+// tile's resolve reads its rect from them. Naruto's own BeginTiling / EndTiling run around it (their device state,
+// clears and resolves are Naruto's), unlike N&B's native ports, whose offsets are N&B's.
+REX_EXTERN(__imp__sub_8213A7E0);
+REX_EXTERN(__imp__sub_8213AC80);
+BANJO_RENUT_HOOK_RAW(sub_8213A7E0) {  // D3DDevice_BeginTiling(device, flags, count, rects, color, z, -, stencil)
+  const u32 device = ctx.r3.u32, count = std::min<u32>(ctx.r5.u32, 16), rects_va = ctx.r6.u32;
+  std::vector<ClearRect> tiles;
+  for (u32 i = 0; i < count; ++i) {
+    ClearRect rect;
+    if (!ReadRect(rects_va + i * 16, rect))
+      break;
+    tiles.push_back(rect);
+  }
+  if (!tiles.empty() && !IsRecordingCommandBuffer(device)) {
+    FlushDeferredVertices(device);
+    u32 width = 0, height = 0;
+    for (const ClearRect &rect : tiles) {
+      width = std::max(width, u32(rect.x2));
+      height = std::max(height, u32(rect.y2));
+    }
+    render_thread::Queue([tiles, width, height] {
+      SetTilingExtentLocked(width, height);
+      SetTilesLocked(tiles.data(), u32(tiles.size()));
+    });
+    g_naruto_begin_tiling_extent.store((height << 16) | width, std::memory_order_relaxed);
+  }
+  __imp__sub_8213A7E0(ctx, base);
+  g_naruto_begin_tiling_extent.store(0, std::memory_order_relaxed);
+}
+BANJO_RENUT_HOOK_RAW(sub_8213AC80) {  // D3DDevice_EndTiling(device, resolve flags, rects, dest texture, color, ...)
+  const u32 device = ctx.r3.u32;
+  g_naruto_in_end_tiling.store(true, std::memory_order_relaxed);
+  __imp__sub_8213AC80(ctx, base);
+  g_naruto_in_end_tiling.store(false, std::memory_order_relaxed);
+  if (!IsRecordingCommandBuffer(device)) {
+    render_thread::Queue([] {
+      SetTilingExtentLocked(0, 0);
+      SetTilesLocked(nullptr, 0);
+    });
+  }
 }
