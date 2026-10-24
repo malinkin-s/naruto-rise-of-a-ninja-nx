@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="492" height="32" role="img" aria-label="состояние: работает на Switch · меню и бои · медленно">
+  <title>состояние: работает на Switch · меню и бои · медленно</title>
+  <rect width="105" height="32" fill="#1C2024"/>
+  <rect x="105" width="387" height="32" fill="#5CA382"/>
+  <g font-family="'IBM Plex Sans','Segoe UI',Helvetica,Arial,sans-serif" font-size="16">
+    <text x="12" y="21.6" fill="#E6E1D3" textLength="81" lengthAdjust="spacingAndGlyphs">состояние</text>
+    <text x="117" y="21.6" fill="#14171A" font-weight="700" textLength="363" lengthAdjust="spacingAndGlyphs">работает на Switch · меню и бои · медленно</text>
+  </g>
+</svg>

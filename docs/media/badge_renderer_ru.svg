@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="246" height="32" role="img" aria-label="рендерер: Renut · deko3d">
+  <title>рендерер: Renut · deko3d</title>
+  <rect width="101" height="32" fill="#1C2024"/>
+  <rect x="101" width="145" height="32" fill="#7FA0B4"/>
+  <g font-family="'IBM Plex Sans','Segoe UI',Helvetica,Arial,sans-serif" font-size="16">
+    <text x="12" y="21.6" fill="#E6E1D3" textLength="77" lengthAdjust="spacingAndGlyphs">рендерер</text>
+    <text x="113" y="21.6" fill="#14171A" font-weight="700" textLength="121" lengthAdjust="spacingAndGlyphs">Renut · deko3d</text>
+  </g>
+</svg>

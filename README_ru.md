@@ -7,10 +7,10 @@
 </p>
 
 <p align="center">
-  <img alt="этап" src="https://img.shields.io/badge/%D1%8D%D1%82%D0%B0%D0%BF-6%20%C2%B7%20%D0%BD%D0%B0%20%D0%BA%D0%BE%D0%BD%D1%81%D0%BE%D0%BB%D0%B8-5CA382?style=flat-square&labelColor=1C2024">
-  <img alt="платформа" src="https://img.shields.io/badge/%D0%BF%D0%BB%D0%B0%D1%82%D1%84%D0%BE%D1%80%D0%BC%D0%B0-Nintendo%20Switch%20(homebrew)-7FA0B4?style=flat-square&labelColor=1C2024">
-  <img alt="рендерер" src="https://img.shields.io/badge/%D1%80%D0%B5%D0%BD%D0%B4%D0%B5%D1%80%D0%B5%D1%80-Renut%20%C2%B7%20deko3d-7FA0B4?style=flat-square&labelColor=1C2024">
-  <img alt="лицензия" src="https://img.shields.io/badge/%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-GPL--3.0-C2AC63?style=flat-square&labelColor=1C2024">
+  <img alt="состояние" src="docs/media/badge_status_ru.svg" height="32">&nbsp;
+  <img alt="платформа" src="docs/media/badge_platform_ru.svg" height="32">&nbsp;
+  <img alt="рендерер" src="docs/media/badge_renderer_ru.svg" height="32">&nbsp;
+  <img alt="лицензия" src="docs/media/badge_licence_ru.svg" height="32">
 </p>
 
 Порт **Naruto: Rise of a Ninja** (Ubisoft Montreal, 2007, эксклюзив Xbox 360) на Nintendo Switch в виде homebrew NRO.

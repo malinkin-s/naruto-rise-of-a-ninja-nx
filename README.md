@@ -7,10 +7,10 @@
 </p>
 
 <p align="center">
-  <img alt="stage" src="https://img.shields.io/badge/stage-6%20%C2%B7%20on%20console-5CA382?style=flat-square&labelColor=1C2024">
-  <img alt="platform" src="https://img.shields.io/badge/platform-Nintendo%20Switch%20(homebrew)-7FA0B4?style=flat-square&labelColor=1C2024">
-  <img alt="renderer" src="https://img.shields.io/badge/renderer-Renut%20%C2%B7%20deko3d-7FA0B4?style=flat-square&labelColor=1C2024">
-  <img alt="licence" src="https://img.shields.io/badge/licence-GPL--3.0-C2AC63?style=flat-square&labelColor=1C2024">
+  <img alt="status" src="docs/media/badge_status.svg" height="32">&nbsp;
+  <img alt="platform" src="docs/media/badge_platform.svg" height="32">&nbsp;
+  <img alt="renderer" src="docs/media/badge_renderer.svg" height="32">&nbsp;
+  <img alt="licence" src="docs/media/badge_licence.svg" height="32">
 </p>
 
 A Nintendo Switch (homebrew NRO) port of **Naruto: Rise of a Ninja** (Ubisoft Montreal, 2007, Xbox 360 exclusive).
