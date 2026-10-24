@@ -14,7 +14,7 @@
 #   --log_network=<this PC>:28780   every log line and stdout/stderr over TCP (sdk/src/core/logging.cpp)
 #   --test_exit_after_s=SECONDS     the run quits by itself (app/src/naruto_test_exit.cpp) and returns to hbmenu
 #   --input_script=...              when given (sdk input_script: 'seconds:button[:hold],...')
-# Output: out/runs/NAME/nx.log; a summary of errors at the end. The PC must accept TCP 28780 from the console.
+# Output: out/runs/NAME/nx.log, shot_<s>.png (NX_SHOTS), rex_profile.log; a summary of errors at the end. The PC must accept TCP 28780 from the console.
 set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
 [ -f "$root/tools/switch/nx.env" ] && . "$root/tools/switch/nx.env"
@@ -27,6 +27,9 @@ args=(--log_network="$host:$port" --test_exit_after_s="$secs")
 # NX_SHOTS="20 40 60": frames of the renderer at those seconds, sent with the log (default: every 20 s).
 shots=${NX_SHOTS:-$(seq -s ' ' 20 20 $((secs - 5)))}
 [ -n "$shots" ] && args+=(--test_shots="${shots// /,}")
+# NX_PROFILE=1: the SDK's profiler samples each busy thread's stack at 1 kHz (sdk/src/ui/switch_perf.cpp); its report
+# (logs/rex/rex_profile.log, always written) comes back at the end of the run as rex_profile.log.
+[ "$NX_PROFILE" = 1 ] && args+=(--switch_profile_stacks=true)
 [ -n "$script" ] && args+=(--input_script="$script")
 args+=("$@")
 echo "console $NX_IP, log to $host:$port, args: ${args[*]}"
@@ -58,6 +61,20 @@ def handle(c, addr):
         first = c.recv(6, socket.MSG_PEEK | socket.MSG_WAITALL)
     except OSError:
         c.close(); return
+    if first == b"NXFILE":
+        header = b""
+        while not header.endswith(b"\n"):
+            ch = c.recv(1)
+            if not ch: break
+            header += ch
+        _, fname, n = header.split()
+        data = recv_exact(c, int(n))
+        c.close()
+        fname = fname.decode().replace("/", "_")
+        with open(f"{out}/{fname}", "wb") as f:
+            f.write(data)
+        print(f"listener: file {fname} ({len(data)} of {int(n)} bytes)", flush=True)
+        return
     if first == b"NXSHOT":
         header = b""
         while not header.endswith(b"\n"):

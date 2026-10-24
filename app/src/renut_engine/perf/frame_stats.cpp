@@ -8,6 +8,8 @@
 #include <chrono>
 #include <mutex>
 
+#include <rex/logging.h>
+
 // Counter 0 of the console profiler: presented frames, which the Status Monitor overlay's FPS (SaltyNX) and the
 // profiler's "game N fps" are made from (sdk/src/ui/switch_perf.cpp; a stub on the PC, me_pc_stubs.cpp).
 extern "C" void RexSwitchPerfCount(unsigned id);
@@ -30,6 +32,10 @@ struct State {
   double window_worst = 0.0;
   double gpu_sum = 0.0, render_sum = 0.0, wait_sum = 0.0;
   int gpu_n = 0, render_n = 0;
+  // naruto-nx: the 10 s log of the game thread's waits by kind.
+  Clock::time_point log_start{};
+  int log_frames = 0, log_fence_n = 0, log_ahead_n = 0;
+  double log_fence_ms = 0.0, log_ahead_ms = 0.0, log_fence_max = 0.0;
 };
 
 State& S() {
@@ -59,6 +65,17 @@ void OnGameFrame() {
     s.window_start = now;
   }
   s.last_frame = now;
+  if (s.log_start == Clock::time_point{}) s.log_start = now;
+  ++s.log_frames;
+  if (const double log_s = std::chrono::duration<double>(now - s.log_start).count(); log_s >= 10.0) {
+    REXLOG_INFO("[renut] game thread waits, {:.1f} s, {} frames: fences {} ({:.2f} ms a frame, longest {:.2f} ms), "
+                "for the render thread (frames ahead) {} ({:.2f} ms a frame)",
+                log_s, s.log_frames, s.log_fence_n, s.log_fence_ms / s.log_frames, s.log_fence_max, s.log_ahead_n,
+                s.log_ahead_ms / s.log_frames);
+    s.log_start = now;
+    s.log_frames = s.log_fence_n = s.log_ahead_n = 0;
+    s.log_fence_ms = s.log_ahead_ms = s.log_fence_max = 0.0;
+  }
   const double window = std::chrono::duration<double>(now - s.window_start).count();
   if (window >= 1.0 && s.window_frames) {
     Snapshot& snap = s.snap;
@@ -106,10 +123,18 @@ void OnRenderThreadFrame(double busy_ms) {
   ++s.render_n;
 }
 
-void OnGameThreadWait(double ms) {
+void OnGameThreadWait(double ms, WaitKind kind) {
   State& s = S();
   std::lock_guard lock(s.mutex);
   s.wait_sum += ms;
+  if (kind == WaitKind::kFence) {
+    ++s.log_fence_n;
+    s.log_fence_ms += ms;
+    s.log_fence_max = std::max(s.log_fence_max, ms);
+  } else {
+    ++s.log_ahead_n;
+    s.log_ahead_ms += ms;
+  }
 }
 
 Snapshot Get() {

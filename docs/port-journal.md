@@ -241,6 +241,17 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   at a camera cut shows two shots blended with the HUD (shot_080): a crossfade or a stale resolve, to compare with
   the PC. Note: New Game with saves on the SD asks "You may lose your autosaves" (scripted runs: use Load Game).
 
+- **Console fights 15-20 -> 30-40 FPS (2026-10-24, prof3 -> prof4)**: the console's profile report now comes back
+  with each run (`SendTestFiles`: logs/rex/rex_profile.log as `NXFILE`), and Renut logs where the game thread waits
+  (`[renut] game thread waits`: fences / frames ahead). prof2-3: no thread near 100 % (render thread 59 %, game
+  thread 36 %), the game thread waited neither for fences nor the render thread, but Renut's pacing slept 7-11 ms a
+  frame on frames that were all late. Cause: `naruto_app.h` never called `sa2::enh::Resolve()` (sa2-nx's
+  `OnPostInitLogging`), so every sa2-nx enhancement stayed off: relaxed vsync (a late frame waited for the next
+  refresh), `thread_signal_skip_idle`, the CAS without a barrier. With it: pacing ~0 ms, render thread 25-41 ->
+  14-16 ms a frame, fights 30-40 FPS; now the GPU is the limit (21-31 ms a frame at 460.8 MHz, handheld).
+  `sa2_gpu_render_scale = false` keeps 1280x720 docked too. Stack sampling (`switch_profile_stacks`) cut the network
+  log after 18 s and the run never quit (the game kept running): not used over nxlink for now.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
@@ -274,3 +285,5 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 
 | Date | Build | Clocks | Scene | FPS / frame time spread | Game thread | Render thread | GPU |
 |---|---|---|---|---|---|---|---|
+| 2026-10-24 | prof3: -O3, no LTO, enhancements off | 1020 / 460.8 / 1600 (handheld) | fight vs Sasuke | 15-27 FPS, most 54-128 ms | 38-55 ms Swap to Swap (7-11 ms of it paced) | 20-42 ms | 24-32 ms |
+| 2026-10-24 | prof4: + `sa2::enh::Resolve()` | 1020 / 460.8 / 1600 (handheld) | fight vs Sasuke | 30-42 FPS, most 40-147 ms | 0-0.4 ms paced | 9-16 ms | 18-32 ms |

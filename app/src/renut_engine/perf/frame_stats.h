@@ -40,7 +40,9 @@ void OnRenderThreadFrame(double busy_ms);
 
 // Called by the renderer when the game thread has waited for the render
 // thread (Swap's frame pacing, fence waits), for the CPU time to leave out.
-void OnGameThreadWait(double ms);
+// naruto-nx: where the game thread waited, logged every 10 s ([renut] game thread waits).
+enum class WaitKind { kFence, kFramesAhead };
+void OnGameThreadWait(double ms, WaitKind kind = WaitKind::kFence);
 
 Snapshot Get();
 

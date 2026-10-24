@@ -437,7 +437,8 @@ uint64_t QueueFrame(std::function<void()> work) {
   const uint64_t done = g_frames_done;
   lock.unlock();
   const auto waited = std::chrono::steady_clock::now() - waiting;
-  frame_stats::OnGameThreadWait(std::chrono::duration<double, std::milli>(waited).count());
+  frame_stats::OnGameThreadWait(std::chrono::duration<double, std::milli>(waited).count(),
+                              frame_stats::WaitKind::kFramesAhead);
   // banjo-nx (2026-10-19, banjo_late_input): this frame's slack (the game thread only: one Swap at a time).
   {
     // The game's frame interval (the game thread only), averaged over about 16 frames.

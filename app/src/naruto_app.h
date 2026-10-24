@@ -10,6 +10,7 @@
 #include <rex/rex_app.h>
 #include <rex/ui/window.h>
 
+#include "cpu/sa2_enhancements.h"
 #include "naruto_test_exit.h"
 #include "naruto_test_shots.h"
 
@@ -34,6 +35,11 @@ class NarutoApp : public rex::ReXApp {
   static std::unique_ptr<rex::ui::WindowedApp> Create(rex::ui::WindowedAppContext& ctx) {
     return std::unique_ptr<NarutoApp>(new NarutoApp(ctx, "naruto", PPCImageConfig));
   }
+
+  // Which of sa2-nx's enhancements run (own key + group master, sa2-nx src/sa2_app.h), in one line; before any guest
+  // thread exists. Without this every one of them stays off: Renut's relaxed vsync (a late frame went to the next
+  // refresh: 7-11 ms of sleep a frame in fights on the console), thread_signal_skip_idle, the CAS without a barrier.
+  void OnPostInitLogging() override { sa2::enh::Resolve(); }
 
   // Without --game_data_root, use a game/ folder next to the executable (on the Switch: sdmc:/switch/naruto-nx/game) or
   // in a parent folder (a PC build tree: the repository's game/). An explicit path always wins. From sa2-nx

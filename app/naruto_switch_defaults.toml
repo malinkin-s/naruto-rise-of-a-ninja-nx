@@ -9,3 +9,5 @@ renut_gpu_backend = "deko3d"
 license_mask = 1
 log_level = "info"
 log_to_file = true
+# sa2-nx's render scale (720 handheld / 1080 docked) stays off: the game's 1280x720 everywhere until measured.
+sa2_gpu_render_scale = false

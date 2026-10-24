@@ -3,6 +3,9 @@
 // image it presents, on deko3d too) is halved and sent over its own TCP connection to log_network's host:port as
 // "NXSHOT <second> <width> <height> <bytes>\n" + R8G8B8X8 rows. The PC's listener writes out/runs/<name>/shot_<s>.png.
 // Nothing touches the screen of the PC (frame grabs there crashed the desktop's compositor).
+// At the end of a test run (test_exit_after_s) SendTestFiles sends the console's profile report the same way, as
+// "NXFILE <name> <bytes>\n" + the file: the SDK's switch_perf.cpp writes logs/rex/rex_profile.log on the SD every 10 s
+// (FPS, each thread's CPU, libnx calls; sampled functions with switch_profile_stacks).
 
 #include "naruto_test_shots.h"
 
@@ -12,6 +15,7 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <thread>
@@ -25,6 +29,10 @@
 #if SA2_RENUT_RENDERER
 #include "renut_engine/gpu/banjo_renut_capture.h"
 #include "renut_engine/gpu/banjo_renut_select.h"
+#endif
+
+#if defined(__SWITCH__)
+extern "C" const char* RexSwitchLogDir(void);  // sdk/src/ui/switch_crash_hooks.c: <NRO folder>/logs/rex/
 #endif
 
 REXCVAR_DEFINE_STRING(test_shots, "", "Test",
@@ -45,9 +53,23 @@ bool SendAll(int fd, const void* data, size_t size) {
   return true;
 }
 
-bool SendShot(const std::string& target, int second, const rex::ui::RawImage& image) {
+int Connect(const std::string& target) {
   const size_t colon = target.rfind(':');
-  if (colon == std::string::npos) return false;
+  if (colon == std::string::npos) return -1;
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(uint16_t(std::atoi(target.c_str() + colon + 1)));
+  if (inet_pton(AF_INET, target.substr(0, colon).c_str(), &addr.sin_addr) != 1) return -1;
+  const int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) return -1;
+  if (connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+    close(fd);
+    return -1;
+  }
+  return fd;
+}
+
+bool SendShot(const std::string& target, int second, const rex::ui::RawImage& image) {
   // Halved by 2x2 averaging: a quarter of the bytes over the console's Wi-Fi.
   const uint32_t w = image.width / 2, h = image.height / 2;
   std::vector<uint8_t> half(size_t(w) * h * 4);
@@ -58,15 +80,25 @@ bool SendShot(const std::string& target, int second, const rex::ui::RawImage& im
         const uint8_t* r1 = r0 + image.stride;
         half[(size_t(y) * w + x) * 4 + c] = uint8_t((r0[0] + r0[4] + r1[0] + r1[4] + 2) / 4);
       }
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(uint16_t(std::atoi(target.c_str() + colon + 1)));
-  if (inet_pton(AF_INET, target.substr(0, colon).c_str(), &addr.sin_addr) != 1) return false;
-  const int fd = socket(AF_INET, SOCK_STREAM, 0);
+  const int fd = Connect(target);
   if (fd < 0) return false;
-  bool ok = connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
   const std::string header = fmt::format("NXSHOT {} {} {} {}\n", second, w, h, half.size());
-  ok = ok && SendAll(fd, header.data(), header.size()) && SendAll(fd, half.data(), half.size());
+  const bool ok = SendAll(fd, header.data(), header.size()) && SendAll(fd, half.data(), half.size());
+  close(fd);
+  return ok;
+}
+
+bool SendFile(const std::string& target, const std::string& path, const std::string& name) {
+  std::FILE* f = std::fopen(path.c_str(), "rb");
+  if (!f) return false;
+  std::vector<uint8_t> data;
+  uint8_t buf[65536];
+  for (size_t n; (n = std::fread(buf, 1, sizeof(buf), f)) > 0;) data.insert(data.end(), buf, buf + n);
+  std::fclose(f);
+  const int fd = Connect(target);
+  if (fd < 0) return false;
+  const std::string header = fmt::format("NXFILE {} {}\n", name, data.size());
+  const bool ok = SendAll(fd, header.data(), header.size()) && SendAll(fd, data.data(), data.size());
   close(fd);
   return ok;
 }
@@ -106,6 +138,16 @@ void StartTestShots() {
       REXLOG_INFO("test_shots: frame at {} s ({}x{}) {}", s, image.width, image.height, sent ? "sent" : "NOT sent");
     }
   });
+}
+
+void SendTestFiles() {
+#if defined(__SWITCH__)
+  const std::string target = rex::cvar::GetFlagByName("log_network");
+  if (target.empty()) return;
+  const std::string path = std::string(RexSwitchLogDir()) + "rex_profile.log";
+  const bool sent = SendFile(target, path, "rex_profile.log");
+  REXLOG_INFO("test files: {} {}", path, sent ? "sent" : "NOT sent");
+#endif
 }
 
 }  // namespace naruto

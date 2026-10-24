@@ -1,4 +1,5 @@
 #include "naruto_test_exit.h"
+#include "naruto_test_shots.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -23,6 +24,7 @@ void StartTestExitTimer(rex::ui::WindowedAppContext& context, std::function<void
   new std::thread([&context, close_window = std::move(close_window), seconds] {
     std::this_thread::sleep_for(std::chrono::seconds(seconds));
     REXLOG_INFO("test_exit_after_s: {} s reached, quitting", seconds);
+    SendTestFiles();
     // Closing the window runs ReXApp::OnClosing (terminate the title, flush the log, exit), on the UI thread.
     context.CallInUIThreadDeferred(close_window);
     // If the UI thread does not get to it (a hung title), end the process anyway.
