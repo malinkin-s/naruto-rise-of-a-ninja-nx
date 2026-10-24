@@ -12,6 +12,14 @@ DestinationPacket), 0x2100 at +10444 (0x28CC, ValuesPacket), 0x2200 at +10548 (0
 `d3d/state.cpp:137-141`, `d3d/draw.cpp:475-479`. The private part differs: device 22,400 bytes (0x5780; N&B 0x5E00,
 SA2 0x6080; PC base `d3d/device.h:575`); index buffer header at +12428 (N&B 0x3094 = 12436).
 
+## The private layout is N&B's, not SA2's (2026-10-24)
+
+Read from Naruto's KickOff and BlockOnFence: completed-fence pointer +10896 (N&B 0x2A90), current fence +10908
+(N&B 0x2A9C), flags +10940 with the no-hardware bit 0x80, +10941 with the immediate-fences bit 0x02 (N&B's bits), the
+in-KickOff word +13216 (N&B 13232: -16), bound objects 8 bytes before N&B's (index buffer 12428, render targets 12432,
+depth 12448). SA2's 0x2A88-0x2ABF block is N&B's +128; Naruto's is N&B's. So Renut's constants are retargeted from the
+N&B values its comments give in brackets, each checked in Naruto's code.
+
 ## Functions
 
 | Naruto | Renut's function (hypothesis) | Evidence |
@@ -21,9 +29,10 @@ SA2 0x6080; PC base `d3d/device.h:575`); index buffer header at +12428 (N&B 0x30
 | 82138A20 | D3DDevice_Swap (CDevice swap) | the only caller of VdSwap and VdGetSystemCommandBuffer; also VdSetDisplayMode, VdPersistDisplay |
 | 8212FA80 | ring initialisation (RingBufferDeviceAllocate side) | VdInitializeRingBuffer, VdEnableRingBufferRPtrWriteBack, MmGetPhysicalAddress |
 | 8212EF28 | KickOff (internal) | writes CP_RB_WPTR (lis 0x7FC8, +0x714); called by 8212F530, 82146C48, 82147370 |
-| 8212F530 | KickOff | calls 8212EF28; called by 8212F608 |
-| 8212F608 | ring reserve (MakeSpace / BeginRing) | 63 instructions, 43 callers; calls EA18, F0D0, F3A8, F530, F708; PC base "RingReserve" |
-| 8212F708 | BlockOnFence | fence counter +10908, writeback +10896; PC base "BlockOnFence: console fence protocol" |
+| 8212F530 | the kick's submission (writes the segment, then 8212EF28) | called by KickOff with the segment from 8212F0D0 / 8212EA18 |
+| **8212F608** | **CDevice::KickOff** (confirmed by code) | returns m_pRing (`lwz r3,48(r31)`); skips when +13216 (in KickOff) or the no-hardware bit 0x80 of +10940 is set; BlockOnFence calls it for the current fence, as N&B's does |
+| **8212F708** | **CDevice::BlockOnFence(device, fence, flags)** (confirmed) | `*(+10896)` completed fence, +10908 current fence; kicks (8212F608) when waiting on the current fence and +13216 is 0; waits with 8212DF78 / 8212DEB8 |
+| 8212DF78 / 8212DEB8 | CBlocker::Check / CBlocker end | the wait loop of BlockOnFence |
 | 8212EA18 | segment allocator | critical section, ring fields +14900..14920; called by BeginVertices, the draws |
 | 82137E00 | DrawIndexedVertices | no direct caller (through a table), index buffer +12428; PC base StateNoteDraw mode 0 |
 | 82137A18 | DrawVertices | no direct caller; PC base StateNoteDraw mode 1 |
