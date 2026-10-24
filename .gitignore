@@ -51,3 +51,4 @@ ref/
 # Logs
 *.log
 /cache/
+__pycache__/
