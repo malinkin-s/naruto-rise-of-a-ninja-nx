@@ -150,8 +150,15 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   jutsu scroll. Snapshot for scenarios: `out/saves/first_autosave` (local).
   - `tools/pc/scripted.sh` once captured the desktop (grim shoots a screen region; the game window was not on the
     visible workspace): it now shoots only when the window is on the active workspace and visible.
+- **Replaying recordings (2026-10-24)**: the whole 7-minute session replayed matched the recording up to the first
+  story autosave (New Game slots +25.6 s in both; autosave 1 at +97.3 s recorded, +98.3 s replayed), then drifted
+  (autosave 2 at +128 s against +173 s). As the user expected: one press landing elsewhere changes everything after
+  it. So recordings are cut right after an autosave (`tools/pc/trim_input.py`, ending with the pad released) and the
+  next piece starts from that save. `new_game_to_autosave1.nxinput` (100 s, 758 states): autosave at +93.4 s with
+  6,339 non-zero bytes, "MISSION UPDATE: Steal the Forbidden Scroll", Naruto idle after the end; its saves are the
+  snapshot `out/saves/autosave1` for the next piece (`tools/pc/record.sh NAME out/saves/autosave1`).
 
-
+## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
 |---|---|---|---|
