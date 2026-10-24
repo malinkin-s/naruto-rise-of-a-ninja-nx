@@ -14,7 +14,10 @@
  */
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
+
+#include <xxhash.h>
 #include <utility>
 #include <vector>
 
@@ -493,4 +496,63 @@ void RegisterGuestDeclaration(u32 declaration_va, const GuestVertexElement *elem
   const u32 declaration = ctx.r3.u32;
   if (const auto *elements = declaration ? GuestPtr<const GuestVertexElement>(elements_va) : nullptr)
     RegisterGuestDeclaration(declaration, elements);
+}
+
+// ---------------------------------------------------------------------------
+// naruto-nx (2026-10-24): Naruto's shader objects (docs/d3d-census.md). Naruto builds them from xeshader.sdb in two
+// game functions, 820F5150 (vertex) and 820F5348 (pixel), each taking a wrapper whose +4 holds the new D3D shader
+// object (the PC base registers them at the same two places: app/src/gpu/shaders/shaders.cpp). The objects have N&B's
+// layout (container at +0x368 / +0x28); the physical part's address is at +0x20 (vertex) / +0x18 (pixel).
+// ---------------------------------------------------------------------------
+REX_EXTERN(__imp__sub_820F5150);
+REX_EXTERN(__imp__sub_820F5348);
+namespace {
+void NarutoRegisterShader(PPCContext &ctx, uint8_t *base, bool pixel) {
+  const u32 wrapper = ctx.r3.u32;
+  if (pixel)
+    __imp__sub_820F5348(ctx, base);
+  else
+    __imp__sub_820F5150(ctx, base);
+  const u32 shader = wrapper ? u32(*GuestPtr<const be_u32>(wrapper + 4)) : 0;
+  if (!shader)
+    return;
+  const u32 physical = *GuestPtr<const be_u32>(shader + (pixel ? 0x18u : 0x20u));
+  RegisterGuestShader(shader, physical, pixel);
+}
+}  // namespace
+BANJO_RENUT_HOOK_RAW(sub_820F5150) {  // the game's vertex shader object from xeshader.sdb
+  NarutoRegisterShader(ctx, base, false);
+}
+BANJO_RENUT_HOOK_RAW(sub_820F5348) {  // the game's pixel shader object from xeshader.sdb
+  NarutoRegisterShader(ctx, base, true);
+}
+
+// naruto-nx (2026-10-24): Naruto's vertex declarations, registered lazily from the object itself (the draw hooks call
+// this with the bound declaration, device +11812, before queuing the draw). Naruto's D3DVertexDeclaration (XDK 6274),
+// read from live objects: Common 0x00100005 (type 5), the element count at +0x18 and the D3DVERTEXELEMENT9 array
+// (12 bytes each) at +0x34, without the D3DDECL_END terminator. Re-registered when the object's elements change.
+void NarutoNoteDeclaration(u32 declaration_va) {
+  if (!declaration_va)
+    return;
+  const auto *words = GuestPtr<const be_u32>(declaration_va);
+  if (!words || u32(words[0]) != 0x00100005u)
+    return;
+  const u32 count = std::min<u32>(u32(words[0x18 / 4]), 63);
+  const auto *elements = GuestPtr<const GuestVertexElement>(declaration_va + 0x34);
+  const uint64_t hash = XXH3_64bits(elements, size_t(count) * sizeof(GuestVertexElement)) ^ count;
+  static std::mutex mutex;
+  static std::unordered_map<u32, uint64_t> seen;
+  {
+    std::lock_guard lock(mutex);
+    auto [it, inserted] = seen.try_emplace(declaration_va, hash);
+    if (!inserted && it->second == hash)
+      return;
+    it->second = hash;
+  }
+  GuestVertexElement copy[64];
+  std::memcpy(copy, elements, size_t(count) * sizeof(GuestVertexElement));
+  copy[count] = {};
+  copy[count].Stream = 0xFF;  // D3DDECL_END
+  copy[count].Type = kDeclTypeUnused;
+  RegisterGuestDeclaration(declaration_va, copy);
 }

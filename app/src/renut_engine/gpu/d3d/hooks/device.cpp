@@ -940,6 +940,11 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
       image = FrontBufferImageLocked(front_buffer);
       if (image.texture)
         State().last_front_buffer = front_buffer;
+      // naruto-nx (2026-10-24, temporary): which front buffer the game presents and whether Renut has its texture.
+      static uint32_t naruto_swaps = 0;
+      if (++naruto_swaps <= 3 || (naruto_swaps & (naruto_swaps - 1)) == 0)
+        RGPU_INFO("[naruto] Swap #{}: front buffer {:#010x} -> {} ({}x{})", naruto_swaps, front_buffer,
+                  image.texture ? "texture" : "NO TEXTURE", image.width, image.height);
       AdvanceTextureFrameLocked();
       AdvanceStreamCacheFrameLocked();
       LatchResolutionScaleLocked();

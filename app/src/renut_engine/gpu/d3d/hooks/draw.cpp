@@ -697,3 +697,38 @@ BANJO_RENUT_HOOK_RAW(sub_821398C8) {  // D3DDevice_Resolve
   NarutoResolve(ctx, base);
 }
 
+
+// naruto-nx (2026-10-24): Naruto's draws (docs/d3d-census.md; the PC base's d3d/draw.cpp hooks the same three).
+// DrawIndexedVertices (82137E00) and DrawVertices (82137A18) have the XDK's arguments; Naruto reaches them through a
+// table (no direct caller). BeginVertices is specialised by LTCG (821375A0): no arguments but the device, always
+// (D3DPT_TRIANGLEFAN, 4 vertices, stride 20); the title then writes the vertices and ends with the inline EndVertices
+// (m_pRing = device + 13428, kDeviceOffsetVerticesRingEnd).
+void NarutoNoteDeclaration(u32 declaration_va);  // shader.cpp
+
+namespace {
+std::atomic<uint32_t> g_naruto_draw_calls[3];
+void NoteBoundDeclaration(u32 device) {
+  NarutoNoteDeclaration(LoadU32(device + d3d::kDeviceOffsetVertexDeclaration));
+}
+void NoteNarutoDraw(int kind, const PPCContext &ctx) {
+  static const char *const kNames[] = {"DrawIndexedVertices", "DrawVertices", "BeginVertices"};
+  if (const uint32_t n = g_naruto_draw_calls[kind].fetch_add(1) + 1; n <= 3 || (n & (n - 1)) == 0)
+    RGPU_INFO("[naruto] {} #{}: r4 {} r5 {} r6 {} r7 {}", kNames[kind], n, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32,
+              ctx.r7.u32);
+}
+}  // namespace
+BANJO_RENUT_HOOK_RAW(sub_82137E00) {
+  NoteNarutoDraw(0, ctx);
+  NoteBoundDeclaration(ctx.r3.u32);
+  D3DDevice_DrawIndexedVertices_hook(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+BANJO_RENUT_HOOK_RAW(sub_82137A18) {
+  NoteNarutoDraw(1, ctx);
+  NoteBoundDeclaration(ctx.r3.u32);
+  D3DDevice_DrawVertices_hook(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
+BANJO_RENUT_HOOK_RAW(sub_821375A0) {
+  NoteNarutoDraw(2, ctx);
+  NoteBoundDeclaration(ctx.r3.u32);
+  ctx.r3.u64 = D3DDevice_BeginVertices_hook(ctx.r3.u32, 5, 4, 20);
+}

@@ -4089,6 +4089,12 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
       RGPU_WARN("Draw dropped: {} {:08X} is not one the renderer knows (words {:08X} {:08X})",
                 vs ? "vertex declaration" : "vertex shader", va, words ? u32(words[0]) : 0,
                 words ? u32(words[1]) : 0);
+      // naruto-nx (2026-10-24, temporary): the object's first 128 bytes, to read Naruto's declaration layout.
+      if (words) {
+        std::string dump;
+        for (int i = 0; i < 32; ++i) dump += fmt::format("{:08X} ", u32(words[i]));
+        RGPU_WARN("  object words: {}", dump);
+      }
     }
     return false;
   }

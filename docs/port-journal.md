@@ -197,6 +197,20 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   game fps through Renut's Swap, render thread 0.06-0.08 ms a frame, GPU 0.5-0.8 ms, 0 draws (draw hooks not on yet),
   clean exit. Next: ClearF, Resolve, resource destruction, the draws, then shaders.
 
+- **Renut: draws reach the GPU (2026-10-24, PC)**: shaders dumped from xeshader.sdb (`tools/naruto_dump_shaders.py`:
+  3,322 unique, 1,809 ps / 1,513 vs; none in default.xex's image) and translated by Renut's XenosRecomp in 1.6 min;
+  shader objects registered after Naruto's own creation (820F5150 vs / 820F5348 ps, object +4 of the wrapper, physical
+  part at +0x20 / +0x18); draws hooked (DrawIndexedVertices 82137E00, DrawVertices 82137A18, BeginVertices 821375A0
+  with 5/4/20 in r4-r6); vertex declarations registered lazily from the object (Naruto 6274: element count at +0x18,
+  D3DVERTEXELEMENT9 array at +0x34, no terminator). Result: 902-44,237 draws per 10 s, none dropped, 30 fps; the frame
+  chain is right (tiles resolved into 0x404D3090 with 0x300, the composite into the device's front buffer 0x40000770,
+  Swap presents it, Renut has its 1280x720 texture) but the captured frames are black: next, lockstep against the Xenos
+  emulation (shaders, constants, textures, the resolve copy).
+  - 1 fps after the Hyprland restart: Vulkan's swapchain acquire blocks while the window is off screen (gdb: render
+    thread in plume::VulkanSwapChain::acquireTexture). Test runs use `--renut_vsync=false`; the game then runs at its
+    own 30 fps through Renut's pacing (PresentationInterval at +13580). Frames come from the renderer
+    (`tools/pc/frames.sh`), not from the screen.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
