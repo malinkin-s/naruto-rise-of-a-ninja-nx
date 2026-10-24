@@ -1500,3 +1500,11 @@ BANJO_RENUT_HOOK_RAW(sub_8213ECE8) {  // D3D's hardware device initialisation (V
 BANJO_RENUT_HOOK(sub_8212F608, KickOff_hook);       // CDevice::KickOff (returns m_pRing; BlockOnFence calls it)
 BANJO_RENUT_HOOK(sub_8212F708, BlockOnFence_hook);  // CDevice::BlockOnFence(device, fence, flags)
 BANJO_RENUT_HOOK(sub_82138A20, D3DDevice_Swap_hook);  // D3DDevice_Swap(device, front buffer, parameters): VdSwap
+// CBlocker::Check (8212DF78): one poll of a D3D wait for the GPU; BlockOnFence's loop (8212F708) ends when it returns 0.
+// Nothing on the host advances a GPU wait, so it answers "done" (Renut's CBlocker_Check_hook), counting its callers.
+BANJO_RENUT_HOOK_RAW(sub_8212DF78) {
+  static std::atomic<uint32_t> polls{0};
+  if (const uint32_t n = polls.fetch_add(1) + 1; n <= 8 || (n & (n - 1)) == 0)
+    RGPU_INFO("[naruto] CBlocker::Check #{} from LR {:#010x}", n, uint32_t(ctx.lr));
+  ctx.r3.u64 = CBlocker_Check_hook(ctx.r3.u32);
+}

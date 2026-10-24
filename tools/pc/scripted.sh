@@ -4,6 +4,7 @@
 #   e.g. tools/pc/scripted.sh title 60 '10:START,20:A' '15 25 40'
 # Input script format: 'seconds:button[:hold],...' from the first input poll (sdk input_system.cpp).
 # REPLAY=<file.nxinput> (optional): play a recorded pad session (tools/pc/record.sh) instead of the input script.
+# EXTRA="--cvar=value ..." (optional): more flags, e.g. EXTRA=--sa2_renderer=renut.
 # SAVE=<dir> (optional): a snapshot of user data (out/saves/<name>) copied into the run's own user data root, so every
 # run starts from the same saves (empty without it).
 # Output: out/runs/NAME/{boot.log,shot_<t>.png,sheet.jpg,user/}. Screenshots are game content: they stay in out/ (ignored).
@@ -20,9 +21,10 @@ mkdir -p "$dir/user"
 [ -n "$SAVE" ] && cp -r "$SAVE"/. "$dir/user/"
 cd "$root/out/pc"
 export LD_LIBRARY_PATH="$root/sdk/out/linux-amd64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-timeout "$secs" ./naruto --game_data_root="$root/game" --gpu_plugin=xenos --log_file="$dir/boot.log" --user_data_root="$dir/user" \
-  $( [ -n "$REPLAY" ] && echo "--input_replay=$REPLAY" || echo "--input_script=$script" ) \
-  > "$dir/stdout.txt" 2>&1 &
+gpu="--gpu_plugin=xenos"; case "$EXTRA" in *sa2_renderer=renut*) gpu="";; esac  # Renut: no GPU plugin
+timeout "$secs" ./naruto --game_data_root="$root/game" $gpu --log_file="$dir/boot.log" --user_data_root="$dir/user" \
+  $( [ -n "$REPLAY" ] && echo "--input_replay=$REPLAY" || { [ -n "$script" ] && echo "--input_script=$script"; } ) \
+  $EXTRA > "$dir/stdout.txt" 2>&1 &
 tpid=$!
 sleep 2
 pid=$(pgrep -P "$tpid" -x naruto || pgrep -n -x naruto)

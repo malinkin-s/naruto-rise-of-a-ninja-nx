@@ -638,3 +638,62 @@ BANJO_RENUT_HOOK_SHARED(sub_82565758, D3DDevice_BeginVertices_hook);  // D3DDevi
                    color_va, float(ctx.f1.f64), clear_stencil);
   RENUT_SA2_ONLY(__imp__sub_825656F8(ctx, base));
 }
+
+// ---------------------------------------------------------------------------
+// naruto-nx (2026-10-24): Naruto's ClearF and Resolve (docs/d3d-census.md), as sa2-nx's: the host clear / resolve is
+// queued for the render thread, then Naruto's own Direct3D runs (its packets go to Renut's ring sink; its CPU state,
+// the fences and the texture headers stay its own).
+// ---------------------------------------------------------------------------
+REX_EXTERN(__imp__sub_82131018);
+REX_EXTERN(__imp__sub_821398C8);
+namespace {
+
+// void D3DDevice_ClearF(D3DDevice*, DWORD Flags, const D3DRECT*, const D3DVECTOR4* pColor, float Z, DWORD Stencil)
+// [82131018; the PC base's d3d/pass.cpp reads the same arguments]: Z in f1, Stencil in r8.
+std::atomic<uint32_t> g_naruto_clears{0}, g_naruto_resolves{0};
+
+void NarutoClearF(PPCContext &ctx, uint8_t *base) {
+  const u32 device = ctx.r3.u32, flags = ctx.r4.u32, rect_va = ctx.r5.u32, color_va = ctx.r6.u32;
+  if (const uint32_t n = g_naruto_clears.fetch_add(1) + 1; n <= 4 || (n & (n - 1)) == 0)
+    RGPU_INFO("[naruto] ClearF #{}: device {:#x} flags {:#x} rect {:#x} color {:#x} z {} stencil {}", n, device, flags,
+              rect_va, color_va, ctx.f1.f64, ctx.r8.u32);
+  ClearRect rect;
+  const bool has_rect = rect_va && ReadRect(rect_va, rect);
+  float color[4] = {0, 0, 0, 0};
+  if (color_va)
+    ReadVector4(color_va, color);
+  QueueHostClear(device, flags, has_rect ? &rect : nullptr, color, float(ctx.f1.f64), ctx.r8.u32);
+  __imp__sub_82131018(ctx, base);
+}
+
+// void D3DDevice_Resolve(D3DDevice*, DWORD Flags, const D3DRECT*, D3DBaseTexture*, const D3DPOINT*, UINT DestLevel,
+//     UINT DestSlice, const D3DVECTOR4* pClearColor, float ClearZ, DWORD ClearStencil, const D3DRESOLVE_PARAMETERS*)
+// [821398C8; the PC base reads ClearStencil at the caller's r1 + 92 too]. EndTiling (8213AC80) calls it per tile.
+void NarutoResolve(PPCContext &ctx, uint8_t *base) {
+  const u32 device = ctx.r3.u32, flags = ctx.r4.u32, rect_va = ctx.r5.u32, dest_texture = ctx.r6.u32;
+  const u32 point_va = ctx.r7.u32, dest_level = ctx.r8.u32, dest_slice = ctx.r9.u32, color_va = ctx.r10.u32;
+  const u32 clear_stencil = LoadU32(ctx.r1.u32 + 92);
+  if (const uint32_t n = g_naruto_resolves.fetch_add(1) + 1; n <= 4 || (n & (n - 1)) == 0)
+    RGPU_INFO("[naruto] Resolve #{}: device {:#x} flags {:#x} rect {:#x} dest {:#x} point {:#x} level {} slice {}", n,
+              device, flags, rect_va, dest_texture, point_va, dest_level, dest_slice);
+  ClearRect rect;
+  const bool has_rect = rect_va && ReadRect(rect_va, rect);
+  i32 dest_x = 0, dest_y = 0;
+  if (const auto *p = point_va ? GuestPtr<const be_u32>(point_va) : nullptr) {
+    dest_x = i32(u32(p[0]));
+    dest_y = i32(u32(p[1]));
+  }
+  QueueHostResolve(device, flags, has_rect ? &rect : nullptr, dest_texture, dest_x, dest_y, dest_level, dest_slice,
+                   color_va, float(ctx.f1.f64), clear_stencil);
+  __imp__sub_821398C8(ctx, base);
+}
+
+}  // namespace
+
+BANJO_RENUT_HOOK_RAW(sub_82131018) {  // D3DDevice_ClearF
+  NarutoClearF(ctx, base);
+}
+BANJO_RENUT_HOOK_RAW(sub_821398C8) {  // D3DDevice_Resolve
+  NarutoResolve(ctx, base);
+}
+
