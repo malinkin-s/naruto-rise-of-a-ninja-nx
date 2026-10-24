@@ -11,6 +11,7 @@
 #include <rex/ui/window.h>
 
 #include "naruto_test_exit.h"
+#include "naruto_test_shots.h"
 
 // Renut's Direct3D-level renderer (app/src/renut_engine, from sa2-nx), chosen at boot with sa2_renderer = "renut".
 #if SA2_RENUT_RENDERER
@@ -83,6 +84,7 @@ class NarutoApp : public rex::ReXApp {
 
   void OnPostLaunchModule(rex::system::XThread* thread) override {
     (void)thread;
+    naruto::StartTestShots();
     naruto::StartTestExitTimer(app_context(), [this] {
       if (window()) window()->RequestClose();
     });

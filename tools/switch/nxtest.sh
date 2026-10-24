@@ -24,35 +24,80 @@ port=${NX_LOG_PORT:-28780}
 host=$(ip -4 route get "$NX_IP" | grep -oP 'src \K\S+')
 dir="$root/out/runs/$name"; rm -rf "$dir"; mkdir -p "$dir"
 args=(--log_network="$host:$port" --test_exit_after_s="$secs")
+# NX_SHOTS="20 40 60": frames of the renderer at those seconds, sent with the log (default: every 20 s).
+shots=${NX_SHOTS:-$(seq -s ' ' 20 20 $((secs - 5)))}
+[ -n "$shots" ] && args+=(--test_shots="${shots// /,}")
 [ -n "$script" ] && args+=(--input_script="$script")
 args+=("$@")
 echo "console $NX_IP, log to $host:$port, args: ${args[*]}"
 
-# The log listener: one connection, written as it arrives; ends when the game closes it or after SECONDS + 120.
-python3 -I - "$port" "$dir/nx.log" $((secs + 120)) <<'PY' &
-import socket, sys, time
+# The listener: the game's log (one connection, written as it arrives) and its frames (test_shots: one connection
+# each, "NXSHOT <s> <w> <h> <bytes>" then RGBX rows -> shot_<s>.png). Ends when the log connection closes or after
+# SECONDS + 120.
+python3 -I - "$port" "$dir" $((secs + 120)) <<'PY' &
+import socket, subprocess, sys, threading, time
 port, out, limit = int(sys.argv[1]), sys.argv[2], float(sys.argv[3])
 s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind(("0.0.0.0", port)); s.listen(1); s.settimeout(limit)
+s.bind(("0.0.0.0", port)); s.listen(4); s.settimeout(1)
 deadline = time.monotonic() + limit
-try:
-    c, addr = s.accept()
-except socket.timeout:
-    print("log listener: the game never connected"); sys.exit(1)
-print(f"log listener: connected from {addr[0]}")
-c.settimeout(5)
-with open(out, "wb") as f:
-    while time.monotonic() < deadline:
-        try:
-            d = c.recv(65536)
-        except socket.timeout:
-            continue
-        except OSError:
-            break
+log_done = threading.Event()
+log_seen = threading.Event()
+
+def recv_exact(c, n):
+    buf = bytearray()
+    while len(buf) < n:
+        d = c.recv(min(1 << 20, n - len(buf)))
         if not d:
             break
-        f.write(d); f.flush()
-print("log listener: done")
+        buf += d
+    return bytes(buf)
+
+def handle(c, addr):
+    c.settimeout(10)
+    try:
+        first = c.recv(6, socket.MSG_PEEK | socket.MSG_WAITALL)
+    except OSError:
+        c.close(); return
+    if first == b"NXSHOT":
+        header = b""
+        while not header.endswith(b"\n"):
+            ch = c.recv(1)
+            if not ch: break
+            header += ch
+        _, sec, w, h, n = header.split()
+        data = recv_exact(c, int(n))
+        c.close()
+        if len(data) == int(n):
+            png = f"{out}/shot_{int(sec):03d}.png"
+            subprocess.run(["magick", "-size", f"{int(w)}x{int(h)}", "-depth", "8", "rgba:-", "-alpha", "off", png],
+                           input=data, check=False)
+            print(f"listener: frame at {int(sec)} s -> {png}", flush=True)
+        return
+    log_seen.set()
+    print(f"listener: log connected from {addr[0]}", flush=True)
+    c.settimeout(5)
+    with open(f"{out}/nx.log", "ab") as f:
+        while time.monotonic() < deadline:
+            try:
+                d = c.recv(65536)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not d:
+                break
+            f.write(d); f.flush()
+    c.close()
+    log_done.set()
+
+while time.monotonic() < deadline and not log_done.is_set():
+    try:
+        c, addr = s.accept()
+    except socket.timeout:
+        continue
+    threading.Thread(target=handle, args=(c, addr), daemon=True).start()
+time.sleep(2)  # a frame still arriving
+print("listener: done" if log_seen.is_set() else "listener: the game never connected", flush=True)
 PY
 listener=$!
 sleep 1
@@ -65,6 +110,9 @@ docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$root
   || { kill $listener 2>/dev/null; echo "nxlink failed: is hbmenu in netloader mode (Y)?"; exit 1; }
 
 wait $listener || true
+if ls "$dir"/shot_*.png >/dev/null 2>&1; then
+  magick montage "$dir"/shot_*.png -tile 4x -geometry 400x+3+3 "$dir/sheet.jpg" && echo "== frames: $dir/sheet.jpg"
+fi
 echo "== $dir/nx.log: $(wc -l < "$dir/nx.log" 2>/dev/null || echo 0) lines"
 grep -iE "\[error\]|\[critical\]|fatal|unregistered|RtlUnwind|abort|exception|C0000017|registered [0-9]+ functions|test_exit" \
   "$dir/nx.log" 2>/dev/null | sed -E 's/\[t[0-9]+\] //' | cut -c27-220 | sort | uniq -c | sort -rn | head -25
