@@ -7,7 +7,8 @@
 #
 # On the console: hbmenu started with title override (hold R while starting a game: full memory), then Y (netloader).
 # The game files must already be on the SD (tools/switch/package.sh, sdmc:/switch/naruto-nx/game).
-# The NRO is written to sdmc:/switch/naruto-nx/naruto.nro (replacing the copy there) and started with:
+# The NRO is written to sdmc:/switch/naruto-nx/naruto.nro (nxlink -p naruto-nx/naruto.nro: hbmenu's netloader puts
+# /switch/ in front itself) and started with:
 #   --log_network=<this PC>:28780   every log line and stdout/stderr over TCP (sdk/src/core/logging.cpp)
 #   --test_exit_after_s=SECONDS     the run quits by itself (app/src/naruto_test_exit.cpp) and returns to hbmenu
 #   --input_script=...              when given (sdk input_script: 'seconds:button[:hold],...')
@@ -55,7 +56,7 @@ listener=$!
 sleep 1
 
 docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$root:$root" -w "$root" naruto-nx/devkita64 \
-  /opt/devkitpro/tools/bin/nxlink -a "$NX_IP" -p switch/naruto-nx/naruto.nro out/nx/naruto.nro "${args[@]}" \
+  /opt/devkitpro/tools/bin/nxlink -a "$NX_IP" -p naruto-nx/naruto.nro out/nx/naruto.nro -- "${args[@]}" \
   || { kill $listener 2>/dev/null; echo "nxlink failed: is hbmenu in netloader mode (Y)?"; exit 1; }
 
 wait $listener || true

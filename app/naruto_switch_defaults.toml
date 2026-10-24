@@ -1,7 +1,7 @@
 # Settings compiled into the Switch NRO (src/naruto_app.h, BuiltInConfig); a naruto.toml next to the NRO overrides them.
 
-# The extracted disc on the SD card (your own copy; nothing from the game is distributed).
-game_data_root = "sdmc:/switch/naruto-nx/game"
+# The game: the extracted disc in game/ next to the NRO (sdmc:/switch/naruto-nx/game), found by src/naruto_app.h
+# (OnConfigurePaths). Your own copy; nothing from the game is distributed.
 # Stage 6 first boot: no renderer yet.
 gpu_plugin = ""
 license_mask = 1
