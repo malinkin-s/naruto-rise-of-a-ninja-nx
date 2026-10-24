@@ -13,6 +13,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 [ -n "$SAVE" ] && SAVE=$(realpath "$SAVE")
 #   tools/pc/scripted.sh NAME tools/pc/scenarios/<x>.sh       (a scenario file sets SCRIPT, SECS, SHOTS)
 if [ -f "$2" ]; then . "$2"; name=$1; secs=$SECS; script=$SCRIPT; shots=$SHOTS
+  [ -n "$REPLAY" ] && REPLAY=$(realpath "$REPLAY")
 else name=$1; secs=$2; script=$3; shots=$4; fi
 dir="$root/out/runs/$name"; rm -rf "$dir"; mkdir -p "$dir"
 mkdir -p "$dir/user"
