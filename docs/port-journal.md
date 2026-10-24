@@ -141,7 +141,17 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   A at 24.3 s, a real pad) replayed to the Single Player Menu. The game is not deterministic (fight AI, load
   lengths): a replay follows the recorded path, not the same frames; long replays may drift.
 
-## Open questions and hypotheses
+- **Saves round-trip (2026-10-24)**: the user's 7-minute pad session (`tools/pc/record.sh first_autosave`: 6,438
+  pad states, 4 story autosaves, `Autosave/Save.dat` with 6,499 non-zero bytes) still loaded as "Damaged saved
+  game": the game creates `Autosave.ninjasave` and opens `autosave.ninjasave` (`XamContentCreate ... mode 3 -> none
+  (result 00000003)`). Content names are case-insensitive on the console and on Windows, not on Linux. Fixed in
+  `sdk/src/system/xam/content_manager.cpp` (`ChildIgnoringCase` for the package and its header). After: `mode 3 ->
+  open (result 00000000)`, Load Game lists "Autosave, Old Gatehouse 00:03:54" and loads into the night scene with the
+  jutsu scroll. Snapshot for scenarios: `out/saves/first_autosave` (local).
+  - `tools/pc/scripted.sh` once captured the desktop (grim shoots a screen region; the game window was not on the
+    visible workspace): it now shoots only when the window is on the active workspace and visible.
+
+
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
 |---|---|---|---|
@@ -150,7 +160,7 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 | Is `LinkApp.xex` ever run? | (a) system-link/online launcher, never in single player; (b) needed for a mode we want | grep the PC base and its logs for `LinkApp`/`XLaunchNewImage`; strings in `default.xex` | PC base: no reference |
 | Does Renut's device-reading work with the 6274 device layout? | (a) same shadow registers and bound-object fields, only moved; (b) 6274 keeps state elsewhere (older private part) | diff the offsets the PC base reads (`d3d/device.*`, `state.*`) against Renut's `d3d_native.h` list | |
 | Does the game raise exceptions in play (RtlUnwind is a stub)? | (a) never in normal play (the PC base plays through); (b) some path (shader compiler, file errors) | grep PC-boot logs for `[STUB] RtlUnwind` | |
-| Do saves round-trip (write real progress, load it)? | (a) yes, slots are only pre-allocated so far; (b) a content/signature problem | play past the first story autosave (Save.dat with data), then Load Game | |
+| Do saves round-trip (write real progress, load it)? | (a) yes, slots are only pre-allocated so far; (b) a content/signature problem | play past the first story autosave (Save.dat with data), then Load Game | **neither**: a case-sensitive content lookup on Linux; fixed, loads |
 | DLC support on the Switch: v1 or later? | 3 extra recompiled engines ≈ 3x the AI2C code in the NRO | size of generated `ai2c*` after codegen | |
 | Can the 1020 MHz A57 hold 30 FPS in the open world? | game thread or render thread limits | stage 7 measurements | |
 

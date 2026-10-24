@@ -9,6 +9,8 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <algorithm>
+#include <cctype>
 #include <array>
 #include <cstring>
 #include <queue>
@@ -194,6 +196,28 @@ void CopyForTheUser(const std::string_view name, const std::filesystem::path& so
   }
 }
 
+// naruto-nx (2026-10-24): content names are case-insensitive on the console (and on Windows hosts), not on Linux.
+// Naruto creates "Autosave.ninjasave" and opens "autosave.ninjasave": with an exact lookup every save loads as
+// "Damaged saved game". Returns the existing child of dir that matches name ignoring ASCII case, or dir / name.
+std::filesystem::path ChildIgnoringCase(const std::filesystem::path& dir, const std::filesystem::path& name) {
+  std::filesystem::path exact = dir / name;
+  std::error_code ec;
+  if (std::filesystem::exists(exact, ec)) {
+    return exact;
+  }
+  const std::string wanted = name.string();
+  for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+    const std::string have = entry.path().filename().string();
+    if (have.size() == wanted.size() &&
+        std::equal(have.begin(), have.end(), wanted.begin(), [](char a, char b) {
+          return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+        })) {
+      return entry.path();
+    }
+  }
+  return exact;
+}
+
 }  // namespace
 
 ContentPackage::ContentPackage(KernelState* kernel_state, const std::string_view root_name,
@@ -269,7 +293,7 @@ std::filesystem::path ContentManager::ResolvePackagePath(uint64_t xuid,
   // Content path:
   // content_root/xuid/title_id/content_type/data_file_name/
   auto package_root = ResolvePackageRoot(used_xuid, data.content_type, data.title_id);
-  return package_root / rex::to_path(data.file_name());
+  return ChildIgnoringCase(package_root, rex::to_path(data.file_name()));
 }
 
 std::filesystem::path ContentManager::ResolvePackageHeaderPath(const std::string_view file_name,
@@ -290,8 +314,8 @@ std::filesystem::path ContentManager::ResolvePackageHeaderPath(const std::string
 
   // Header root path:
   // content_root/xuid/title_id/Headers/content_type/filename.header
-  return root_path_ / xuid_str / title_id_str / kGameContentHeaderDirName / content_type_str /
-         final_name;
+  return ChildIgnoringCase(root_path_ / xuid_str / title_id_str / kGameContentHeaderDirName / content_type_str,
+                           final_name);
 }
 
 std::vector<XCONTENT_AGGREGATE_DATA> ContentManager::ListContent(uint32_t device_id, uint64_t xuid,

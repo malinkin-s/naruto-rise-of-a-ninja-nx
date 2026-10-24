@@ -33,8 +33,11 @@ for t in times:
     time.sleep(max(0, t - (time.monotonic() - start)))
     c = [c for c in json.loads(subprocess.run(["hyprctl", "clients", "-j"], capture_output=True, text=True).stdout)
          if c["pid"] == pid]
-    if not c:
-        print(f"no window at {t:g} s"); continue
+    # grim captures a screen region, not the window: shoot only when the game's window is on the active workspace,
+    # visible and not hidden, or the shot would show whatever else is there (another app, the desktop).
+    ws = json.loads(subprocess.run(["hyprctl", "activeworkspace", "-j"], capture_output=True, text=True).stdout)
+    if not c or c[0]["workspace"]["id"] != ws["id"] or c[0].get("hidden") or not c[0].get("mapped", True):
+        print(f"no visible game window at {t:g} s: no shot"); continue
     geo = "%d,%d %dx%d" % (*c[0]["at"], *c[0]["size"])
     subprocess.run(["grim", "-g", geo, f"{out}/shot_{t:g}.png"])
 PY
