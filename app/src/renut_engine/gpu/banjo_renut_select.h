@@ -27,6 +27,10 @@ inline bool Active() {
 
 }  // namespace banjo::renut_gpu
 
+// naruto-nx (2026-10-24): the vendored hooks are at SA2's addresses; each is wrapped in RENUT_SA2_ONLY (compiled out)
+// until it is retargeted to Naruto's function (docs/renut-retarget.md, docs/d3d-census.md).
+#define RENUT_SA2_ONLY(...)
+
 // Renut's hook at an address banjo-nx does not hook.
 #define BANJO_RENUT_HOOK(subroutine, function)                                         \
   REX_EXTERN(__imp__##subroutine);                                                     \

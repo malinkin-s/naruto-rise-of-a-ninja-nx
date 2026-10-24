@@ -41,6 +41,13 @@ else()
     rexglue_setup_target(naruto GPU_PLUGINS xenos)
 endif()
 
+# Renut's Direct3D-level renderer (reNut by masterspike52, through banjo-nx and sa2-nx; docs/renut-retarget.md), chosen
+# at boot with sa2_renderer = "renut". PC first (plume Vulkan); the Switch's deko3d build follows.
+option(NARUTO_RENUT_RENDERER "Link Renut's Direct3D-level renderer" ON)
+if(NARUTO_RENUT_RENDERER AND NOT REXGLUE_PLATFORM_SWITCH)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/naruto_renut_gpu.cmake")
+endif()
+
 if(REXGLUE_PLATFORM_SWITCH)
     # An emulator (Ryujinx) starts NROs without argv[0]: the SDK then uses this path for the NRO's folder.
     if(TARGET rexcore)

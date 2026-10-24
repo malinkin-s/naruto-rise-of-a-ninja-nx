@@ -19,4 +19,11 @@ tmp=$(mktemp -d)
 git clone -q https://github.com/renderbag/dxc-bin.git "$tmp/dxc-bin" && git -C "$tmp/dxc-bin" checkout -q 737ac9f51c3d06f0cd1ee7e14dc065bafd52310d
 cp -r "$tmp/dxc-bin/bin" "$tmp/dxc-bin/lib" "$dxc/" 2>/dev/null || cp -r "$tmp/dxc-bin/bin" "$dxc/"
 rm -rf "$tmp"
+# Linux: run the system's DXC (Arch package directx-shader-compiler, signed) instead of the downloaded binaries; both
+# the build's host shaders (dxc-linux) and XenosRecomp (libdxcompiler.so) then use it.
+if [ -x /usr/bin/dxc ] && [ -f /usr/lib/libdxcompiler.so ]; then
+  ln -sf /usr/bin/dxc "$dxc/bin/x64/dxc-linux"
+  ln -sf /usr/lib/libdxcompiler.so "$dxc/lib/x64/libdxcompiler.so"
+  echo "dxc: the system's ($(/usr/bin/dxc --version 2>&1 | head -1))"
+fi
 du -sh "$root"/app/thirdparty/*

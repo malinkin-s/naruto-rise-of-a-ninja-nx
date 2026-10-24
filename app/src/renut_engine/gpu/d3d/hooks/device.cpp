@@ -1330,7 +1330,7 @@ void Sa2CreateDevice(PPCContext &ctx, uint8_t *base) {
 
   // SA2's own no-hardware device.
   ctx.r4.u64 = kDeviceTypeNoHardware;
-  __imp__sub_8254FC10(ctx, base);
+  RENUT_SA2_ONLY(__imp__sub_8254FC10(ctx, base));
   if (ctx.r3.u32 != 0)
     return;
   const u32 device_va = LoadGuestU32(out_va);
@@ -1364,7 +1364,7 @@ void Sa2CreateDevice(PPCContext &ctx, uint8_t *base) {
     if (present_parameters) {
       ctx.r3.u64 = device_va;
       ctx.r4.u64 = present_parameters;
-      __imp__sub_8255CB20(ctx, base);
+      RENUT_SA2_ONLY(__imp__sub_8255CB20(ctx, base));
       if (!ctx.r3.u32) {
         RGPU_ERROR("Direct3D_CreateDevice: InitializePresentationParameters failed");
         ctx.r3.u64 = kE_OUTOFMEMORY;
@@ -1372,7 +1372,7 @@ void Sa2CreateDevice(PPCContext &ctx, uint8_t *base) {
       }
     }
     ctx.r3.u64 = device_va;
-    __imp__sub_8255C150(ctx, base);
+    RENUT_SA2_ONLY(__imp__sub_8255C150(ctx, base));
     native::RewindRing(d);
     // From here the title device's fences complete on the render thread (KickFence).
     bytes[kDeviceOffsetFlags2] &= u8(~kDeviceFlagImmediateFences);
@@ -1403,19 +1403,19 @@ void Sa2SynchronizeToPresentationInterval_hook(u32 device_va, u32 /*immediate*/)
 
 }  // namespace
 
-BANJO_RENUT_HOOK_RAW(sub_8254FC10) {  // Direct3D_CreateDevice [0x8264DF28]
+[[maybe_unused]] static void renut_sa2_disabled_sub_8254FC10([[maybe_unused]] PPCContext& ctx, [[maybe_unused]] uint8_t* base) {  // Direct3D_CreateDevice [0x8264DF28]
   Sa2CreateDevice(ctx, base);
 }
-BANJO_RENUT_HOOK(sub_8254EEE8, D3DDevice_InsertCallback_hook);  // D3DDevice_InsertCallback [0x821FB688]
-BANJO_RENUT_HOOK(sub_825589D8, Sa2SynchronizeToPresentationInterval_hook);  // D3D_SynchronizeToPresentationInterval [0x8228A748]
-BANJO_RENUT_HOOK(sub_8254EBB8, KickOff_hook);  // D3D_CDevice_KickOff [0x82210AB0]
-BANJO_RENUT_HOOK(sub_8254E830, KickOffSegment_hook);  // D3D_CDevice_KickOffSegment [0x822106C8]
-BANJO_RENUT_HOOK(sub_8254EDF8, BeginRingBig_hook);  // D3D_CDevice_BeginRingBig [0x821F7C18]
-BANJO_RENUT_HOOK(sub_8254D4B8, RingBufferDeviceAllocate_hook);  // D3D_RingBufferDeviceAllocate [0x8222D3E0]
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254EEE8, D3DDevice_InsertCallback_hook));  // D3DDevice_InsertCallback [0x821FB688]
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_825589D8, Sa2SynchronizeToPresentationInterval_hook));  // D3D_SynchronizeToPresentationInterval [0x8228A748]
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254EBB8, KickOff_hook));  // D3D_CDevice_KickOff [0x82210AB0]
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254E830, KickOffSegment_hook));  // D3D_CDevice_KickOffSegment [0x822106C8]
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254EDF8, BeginRingBig_hook));  // D3D_CDevice_BeginRingBig [0x821F7C18]
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254D4B8, RingBufferDeviceAllocate_hook));  // D3D_RingBufferDeviceAllocate [0x8222D3E0]
 BANJO_RENUT_HOOK_SHARED(sub_8254D9A8, AllocateInlineData_hook);  // D3D_CDevice_AllocateInlineData [0x8222D240]
-BANJO_RENUT_HOOK(sub_8254DA90, Sa2NewSegment_hook);  // SA2's ring segment allocator
-BANJO_RENUT_HOOK(sub_8254EF40, D3DDevice_SetRingBufferParameters_hook);  // D3DDevice_SetRingBufferParameters [0x82657508]
-BANJO_RENUT_HOOK(sub_82558E98, D3DDevice_Swap_hook);  // D3DDevice_Swap [0x82287590]
-BANJO_RENUT_HOOK(sub_8254D6E8, BlockOnFence_hook);  // D3D_CDevice_BlockOnFence [0x8228F558]
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254DA90, Sa2NewSegment_hook));  // SA2's ring segment allocator
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254EF40, D3DDevice_SetRingBufferParameters_hook));  // D3DDevice_SetRingBufferParameters [0x82657508]
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_82558E98, D3DDevice_Swap_hook));  // D3DDevice_Swap [0x82287590]
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254D6E8, BlockOnFence_hook));  // D3D_CDevice_BlockOnFence [0x8228F558]
 BANJO_RENUT_HOOK_SHARED(sub_8254F400, CBlocker_Check_hook);  // D3D_CBlocker_Check [0x8264DCD0]
-BANJO_RENUT_HOOK(sub_8254ECF8, IsFencePending_hook);  // D3DDevice_IsFencePending [0x8228F650]
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_8254ECF8, IsFencePending_hook));  // D3DDevice_IsFencePending [0x8228F650]

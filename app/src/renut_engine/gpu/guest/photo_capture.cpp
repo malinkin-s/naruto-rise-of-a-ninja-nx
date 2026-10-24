@@ -121,4 +121,4 @@ u32 PhotoCapture_hook(u32 photo) {
 
 } // namespace
 
-BANJO_RENUT_HOOK(sub_82535F20, PhotoCapture_hook);  // sub_82535F20
+RENUT_SA2_ONLY(BANJO_RENUT_HOOK(sub_82535F20, PhotoCapture_hook));  // sub_82535F20

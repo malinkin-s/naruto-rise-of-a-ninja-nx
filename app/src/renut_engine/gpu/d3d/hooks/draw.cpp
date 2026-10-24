@@ -606,7 +606,7 @@ BANJO_RENUT_HOOK_SHARED(sub_82565758, D3DDevice_BeginVertices_hook);  // D3DDevi
 
 // void D3DDevice_ClearF(D3DDevice*, DWORD Flags, const D3DRECT *pRect, const D3DVECTOR4 *pColor, float Z,
 //     DWORD Stencil) [sub_82563978; N&B 0x822811A0]: Z in f1 (r7's slot), Stencil in r8.
-BANJO_RENUT_HOOK_RAW(sub_82563978) {
+[[maybe_unused]] static void renut_sa2_disabled_sub_82563978([[maybe_unused]] PPCContext& ctx, [[maybe_unused]] uint8_t* base) {
   const u32 device = ctx.r3.u32, flags = ctx.r4.u32, rect_va = ctx.r5.u32, color_va = ctx.r6.u32;
   ClearRect rect;
   const bool has_rect = rect_va && ReadRect(rect_va, rect);
@@ -614,7 +614,7 @@ BANJO_RENUT_HOOK_RAW(sub_82563978) {
   if (color_va)
     ReadVector4(color_va, color);
   QueueHostClear(device, flags, has_rect ? &rect : nullptr, color, float(ctx.f1.f64), ctx.r8.u32);
-  __imp__sub_82563978(ctx, base);
+  RENUT_SA2_ONLY(__imp__sub_82563978(ctx, base));
 }
 
 // void D3DDevice_Resolve(D3DDevice*, DWORD Flags, const D3DRECT *pSourceRect, D3DBaseTexture *pDestTexture,
@@ -623,7 +623,7 @@ BANJO_RENUT_HOOK_RAW(sub_82563978) {
 // ClearStencil and pParameters in the caller's argument words at +92 and +100 (sub_825656F8 reads them there). Every
 // resolve of SA2 comes here: the game's, the Present's and Direct3D's own (sub_825645A0, the core, has no other
 // caller).
-BANJO_RENUT_HOOK_RAW(sub_825656F8) {
+[[maybe_unused]] static void renut_sa2_disabled_sub_825656F8([[maybe_unused]] PPCContext& ctx, [[maybe_unused]] uint8_t* base) {
   const u32 device = ctx.r3.u32, flags = ctx.r4.u32, rect_va = ctx.r5.u32, dest_texture = ctx.r6.u32;
   const u32 point_va = ctx.r7.u32, dest_level = ctx.r8.u32, dest_slice = ctx.r9.u32, color_va = ctx.r10.u32;
   const u32 clear_stencil = LoadU32(ctx.r1.u32 + 92);
@@ -636,5 +636,5 @@ BANJO_RENUT_HOOK_RAW(sub_825656F8) {
   }
   QueueHostResolve(device, flags, has_rect ? &rect : nullptr, dest_texture, dest_x, dest_y, dest_level, dest_slice,
                    color_va, float(ctx.f1.f64), clear_stencil);
-  __imp__sub_825656F8(ctx, base);
+  RENUT_SA2_ONLY(__imp__sub_825656F8(ctx, base));
 }

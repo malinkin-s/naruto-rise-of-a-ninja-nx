@@ -47,7 +47,9 @@ using namespace renut::gpu;
 // N&B's XMemFree (0x822399D8), its own allocator (not D3D code): for the
 // memory of resources N&B's code allocated itself. sa2-nx: SA2's XMemFree
 // (sub_828074B8, what SA2's D3DResource_Destroy calls).
-REX_IMPORT(__imp__sub_828074B8, GameXMemFree, void(u32, u32));
+// naruto-nx: Naruto's XMemFree is sub_8217DDB0 (hypothesis: Naruto's D3DResource_Destroy 8212D750 calls it; the PC base
+// calls it "the memory dispatcher", app/src/gpu/host/guest_hooks.cpp). SA2's was sub_828074B8.
+REX_IMPORT(__imp__sub_8217DDB0, GameXMemFree, void(u32, u32));
 // The kernel's physical memory, as XPhysicalAlloc / XPhysicalFree use it.
 REX_IMPORT(__imp__MmAllocatePhysicalMemoryEx, MmAllocatePhysicalMemoryEx,
            u32(u32, u32, u32, u32, u32, u32));
@@ -1693,7 +1695,7 @@ u32 AddRefResource(u32 resource) {
 // BlockOnFence: the render thread is then past it) and frees it.
 
 // void D3DResource_Destroy(D3DResource*) [sub_8254A200; N&B 0x822084F0]
-BANJO_RENUT_HOOK_RAW(sub_8254A200) {
+[[maybe_unused]] static void renut_sa2_disabled_sub_8254A200([[maybe_unused]] PPCContext& ctx, [[maybe_unused]] uint8_t* base) {
   const u32 resource = ctx.r3.u32;
   render_thread::Queue([resource] {
     ReleaseHostSurfaceLocked(resource);
@@ -1701,5 +1703,5 @@ BANJO_RENUT_HOOK_RAW(sub_8254A200) {
     ReleaseGuestShaderLocked(resource);
     ReleaseGuestDeclarationLocked(resource);
   });
-  __imp__sub_8254A200(ctx, base);
+  RENUT_SA2_ONLY(__imp__sub_8254A200(ctx, base));
 }

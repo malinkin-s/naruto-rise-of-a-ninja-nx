@@ -225,10 +225,10 @@ using namespace renut::gpu;
 //                   BOOL *hidef): the screen size for the video mode, 1280x720
 // for every HD mode. Widened here.
 REX_EXTERN(__imp__sub_823ED828);
-BANJO_RENUT_HOOK_RAW(sub_823ED828) {
+[[maybe_unused]] static void renut_sa2_disabled_sub_823ED828([[maybe_unused]] PPCContext& ctx, [[maybe_unused]] uint8_t* base) {
   const u32 width_va = ctx.r5.u32;
   const u32 height_va = ctx.r6.u32;
-  __imp__sub_823ED828(ctx, base);
+  RENUT_SA2_ONLY(__imp__sub_823ED828(ctx, base));
   if (width_va && height_va && LoadU32(width_va) == kNativeWidth &&
       LoadU32(height_va) == kNativeHeight)
     StoreU32(width_va, GuestScreenWidth());
@@ -236,10 +236,10 @@ BANJO_RENUT_HOOK_RAW(sub_823ED828) {
 
 // void sub_823191B8(): the screen pools and the textures over them, once.
 REX_EXTERN(__imp__sub_823191B8);
-BANJO_RENUT_HOOK_RAW(sub_823191B8) {
+[[maybe_unused]] static void renut_sa2_disabled_sub_823191B8([[maybe_unused]] PPCContext& ctx, [[maybe_unused]] uint8_t* base) {
   const bool creates = LoadU32(kPoolsCreatedVa) == 0;
   t_sizing_pools = creates && Widened();
-  __imp__sub_823191B8(ctx, base);
+  RENUT_SA2_ONLY(__imp__sub_823191B8(ctx, base));
   if (t_sizing_pools)
     WidenScratchTextures();
   t_sizing_pools = false;
@@ -248,29 +248,29 @@ BANJO_RENUT_HOOK_RAW(sub_823191B8) {
 // LPVOID sub_82364C78(SIZE_T size, int alignment, DWORD protect): the game's
 // XPhysicalAlloc.
 REX_EXTERN(__imp__sub_82364C78);
-BANJO_RENUT_HOOK_RAW(sub_82364C78) {
+[[maybe_unused]] static void renut_sa2_disabled_sub_82364C78([[maybe_unused]] PPCContext& ctx, [[maybe_unused]] uint8_t* base) {
   if (t_sizing_pools)
     ctx.r3.u64 = PoolAllocationBytes(ctx.r3.u32);
-  __imp__sub_82364C78(ctx, base);
+  RENUT_SA2_ONLY(__imp__sub_82364C78(ctx, base));
 }
 
 // float sub_82239C40(): the active camera's projection aspect.
 REX_EXTERN(__imp__sub_82239C40);
-BANJO_RENUT_HOOK_RAW(sub_82239C40) {
-  __imp__sub_82239C40(ctx, base);
+[[maybe_unused]] static void renut_sa2_disabled_sub_82239C40([[maybe_unused]] PPCContext& ctx, [[maybe_unused]] uint8_t* base) {
+  RENUT_SA2_ONLY(__imp__sub_82239C40(ctx, base));
   WidenAspect(ctx, CameraAspectMode());
 }
 
 // float sub_82236148(): the projection aspect for the console's mode.
 REX_EXTERN(__imp__sub_82236148);
-BANJO_RENUT_HOOK_RAW(sub_82236148) {
-  __imp__sub_82236148(ctx, base);
+[[maybe_unused]] static void renut_sa2_disabled_sub_82236148([[maybe_unused]] PPCContext& ctx, [[maybe_unused]] uint8_t* base) {
+  RENUT_SA2_ONLY(__imp__sub_82236148(ctx, base));
   WidenAspect(ctx, LoadU32(kConsoleAspectModeVa));
 }
 
 // HRESULT XuiRenderSetViewTransform(HXUIDC, const D3DXMATRIX *) [0x82205C88]
 REX_EXTERN(__imp__sub_82205C88);
-BANJO_RENUT_HOOK_RAW(sub_82205C88) {
+[[maybe_unused]] static void renut_sa2_disabled_sub_82205C88([[maybe_unused]] PPCContext& ctx, [[maybe_unused]] uint8_t* base) {
   UnstretchXuiView(ctx.r4.u32);
-  __imp__sub_82205C88(ctx, base);
+  RENUT_SA2_ONLY(__imp__sub_82205C88(ctx, base));
 }
