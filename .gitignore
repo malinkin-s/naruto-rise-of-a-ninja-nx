@@ -53,3 +53,6 @@ ref/
 /cache/
 __pycache__/
 tools/switch/nx.env
+
+# Renderer third-party trees (tools/fetch_renut_deps.sh)
+/app/thirdparty/
