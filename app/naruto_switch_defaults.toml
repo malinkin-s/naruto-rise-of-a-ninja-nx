@@ -2,8 +2,10 @@
 
 # The game: the extracted disc in game/ next to the NRO (sdmc:/switch/naruto-nx/game), found by src/naruto_app.h
 # (OnConfigurePaths). Your own copy; nothing from the game is distributed.
-# Stage 6 first boot: no renderer yet.
+# Renut's Direct3D-level renderer on deko3d (no GPU plugin).
 gpu_plugin = ""
+sa2_renderer = "renut"
+renut_gpu_backend = "deko3d"
 license_mask = 1
 log_level = "info"
 log_to_file = true

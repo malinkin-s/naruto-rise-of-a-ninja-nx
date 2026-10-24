@@ -1,11 +1,11 @@
 #!/bin/bash
 # Copies the renderer's third-party trees into app/thirdparty/ (not committed: 84 MB) from sa2-nx at a pinned commit:
 # plume (with banjo-nx's deko3d back end; MIT), reblue-XenosRecomp (the shader translator; MIT), uam (deko3d shader
-# compiler; GPL-2.0+ / MIT parts), imgui (MIT). The source checkout is ~/Projects/sa2-nx or $SA2_NX (cloned if missing).
+# compiler; GPL-2.0+ / MIT parts), imgui (MIT). The source checkout is ~/Projects/cloned/sa2-nx or $SA2_NX (cloned if missing).
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 commit=adf3a4e
-src=${SA2_NX:-$HOME/Projects/sa2-nx}
+src=${SA2_NX:-$HOME/Projects/cloned/sa2-nx}
 [ -d "$src/.git" ] || git clone https://github.com/ChanseyIsTheBest/sa2-nx.git "$src"
 git -C "$src" cat-file -e "$commit^{commit}" 2>/dev/null || git -C "$src" fetch --unshallow 2>/dev/null || git -C "$src" fetch origin
 mkdir -p "$root/app/thirdparty"

@@ -49,9 +49,11 @@ if(REXGLUE_PLATFORM_SWITCH)
     set(PLUME_DEKO3D ON CACHE BOOL "deko3d back end (Switch)" FORCE)
     # The host shaders' deko3d blobs (gpu.cmake renut_host_shader) need the PC tools tools/deko3d_build_tools.sh builds.
     set(BANJO_DEKO3D_HOST_SHADERS ON)
-    set(BANJO_DEKO3D_SPIRV_CROSS "${CMAKE_SOURCE_DIR}/../out/deko3d_tools/spirv-cross-build/spirv-cross.exe" CACHE FILEPATH
+    # naruto-nx: the host shaders' headers come from tools/switch/host_shaders.sh (no host tools in the container).
+    set(RENUT_PREBUILT_HOST_SHADERS ON)
+    set(BANJO_DEKO3D_SPIRV_CROSS "${CMAKE_SOURCE_DIR}/../out/deko3d_tools/spirv-cross-build/spirv-cross" CACHE FILEPATH
         "SPIRV-Cross for the deko3d host shaders (tools/deko3d_build_tools.sh)")
-    set(BANJO_DEKO3D_UAM "${CMAKE_SOURCE_DIR}/../out/deko3d_tools/uam-build/uam.exe" CACHE FILEPATH
+    set(BANJO_DEKO3D_UAM "${CMAKE_SOURCE_DIR}/../out/deko3d_tools/uam-build/uam" CACHE FILEPATH
         "uam (thirdparty/uam built for the PC) for the deko3d host shaders (tools/deko3d_build_tools.sh)")
     foreach(_banjo_tool BANJO_DEKO3D_SPIRV_CROSS BANJO_DEKO3D_UAM)
         if(NOT EXISTS "${${_banjo_tool}}")

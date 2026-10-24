@@ -19,6 +19,8 @@ else name=$1; secs=$2; script=$3; shots=$4; fi
 dir="$root/out/runs/$name"; rm -rf "$dir"; mkdir -p "$dir"
 mkdir -p "$dir/user"
 [ -n "$SAVE" ] && cp -r "$SAVE"/. "$dir/user/"
+"$root/tools/pc/shm_clean.sh"  # stale /dev/shm guest memory (xenia_memory_*) before the run
+trap '"$root/tools/pc/shm_clean.sh"' EXIT  # and after it
 cd "$root/out/pc"
 export LD_LIBRARY_PATH="$root/sdk/out/linux-amd64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 gpu="--gpu_plugin=xenos"; case "$EXTRA" in *sa2_renderer=renut*) gpu="";; esac  # Renut: no GPU plugin

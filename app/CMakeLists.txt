@@ -42,9 +42,9 @@ else()
 endif()
 
 # Renut's Direct3D-level renderer (reNut by masterspike52, through banjo-nx and sa2-nx; docs/renut-retarget.md), chosen
-# at boot with sa2_renderer = "renut". PC first (plume Vulkan); the Switch's deko3d build follows.
+# at boot with sa2_renderer = "renut": plume Vulkan on the PC, plume's deko3d back end on the Switch.
 option(NARUTO_RENUT_RENDERER "Link Renut's Direct3D-level renderer" ON)
-if(NARUTO_RENUT_RENDERER AND NOT REXGLUE_PLATFORM_SWITCH)
+if(NARUTO_RENUT_RENDERER)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/naruto_renut_gpu.cmake")
 endif()
 

@@ -5,6 +5,8 @@
 set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
 secs=${1:-0}; shift || true
+"$root/tools/pc/shm_clean.sh"  # stale /dev/shm guest memory (xenia_memory_*) before the run
+trap '"$root/tools/pc/shm_clean.sh"' EXIT  # and after it
 cd "$root/out/pc"
 cmd=(./naruto --game_data_root="$root/game" --gpu_plugin=xenos --log_file="$root/out/boot.log" "$@")
 export LD_LIBRARY_PATH="$root/sdk/out/linux-amd64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

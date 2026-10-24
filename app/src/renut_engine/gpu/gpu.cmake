@@ -77,6 +77,14 @@ endif()
 # to SPIR-V (always) and DXIL (Windows), as headers exposing
 # g_<stem>_spirv / g_<stem>_dxil.
 function(renut_host_shader TARGET STEM PROFILE)
+    # naruto-nx: a cross build (the Switch, in the devkitA64 container) has no host DXC / SPIRV-Cross / uam: the host
+    # shaders' headers are made on the host first (tools/switch/host_shaders.sh) into ${RENUT_GPU_GEN_DIR}/host_shaders.
+    if(RENUT_PREBUILT_HOST_SHADERS)
+        foreach(fmt spirv deko3d)
+            target_sources(${TARGET} PRIVATE "${RENUT_GPU_GEN_DIR}/host_shaders/${STEM}.${fmt}.h")
+        endforeach()
+        return()
+    endif()
     set(src "${RENUT_GPU_DIR}/shaders/host/${STEM}.hlsl")
     file(GLOB host_includes "${RENUT_GPU_DIR}/shaders/host/*.hlsli")
 

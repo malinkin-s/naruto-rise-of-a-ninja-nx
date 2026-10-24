@@ -11,11 +11,14 @@
 set -u
 secs=$1; out=$2; shift 2
 mode=${NARUTO_DISPLAY:-ws2}
+clean="$(dirname "$0")/shm_clean.sh"
+"$clean"  # stale /dev/shm guest memory from earlier runs
+trap '"$clean"' EXIT  # and this run's
 export LD_LIBRARY_PATH="$(cd ../../sdk/out/linux-amd64 && pwd)${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 args=("$@" --test_exit_after_s="$secs")
 case "$mode" in
   direct)
-    ( ulimit -c 0; timeout $((secs + 30)) "${args[@]}" ) > "$out" 2>&1; exit $? ;;
+    ( ulimit -c 0; timeout $((secs + 30)) "${args[@]}" ) > "$out" 2>&1; rc=$?; exit $rc ;;
   xvfb)
     ( timeout $((secs + 30)) "$(dirname "$0")/xrun.sh" "${args[@]}" ) > "$out" 2>&1; exit $? ;;
 esac
