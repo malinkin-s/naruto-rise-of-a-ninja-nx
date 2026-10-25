@@ -329,7 +329,14 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   `sa2_render_height_handheld`. 480 (853x480, 0.667x), the same fight at stock clocks: GPU 18-31 -> 8-16 ms a frame,
   32-47 -> 46-58 FPS (the fight logic runs at 60). Softer image. The default stays 1280x720 until the user picks.
 
-- **Ground shadow wedges in Konoha (2026-10-25, open)**: the user's artifact: dark radial wedges on the plaza ground,
+- **Ground shadow wedges in Konoha (2026-10-25, FIXED: Renut ignored the polygon offset)**: the cause, found after
+  the list below: Naruto draws ground shadows as decal meshes (PS F3B309BF6DE665D3) with a GEQUAL depth test and a
+  depth bias (D3DRS_DEPTHBIAS / SLOPESCALEDEPTHBIAS: PA_SU_POLY_OFFSET_* at device +10832..+10844, mode_control
+  bits 11-12); Renut kept only mode_control & 7 and never set a host depth bias, so triangles of the decal failed the
+  test against the ground (which ones changed with the camera). `naruto_debug_zalways_ps` (that shader's test always
+  passing) gave a smooth shadow: the depth test. PipelineKey now carries `depth_bias` / `depth_bias_slope`, computed
+  as the PC base and the SDK do, set as the pipeline's static depth bias; the plaza matches the Xenos frames. (The
+  pipeline list's key size changed: a saved pipeline_list.bin is started over once.) The investigation, kept: the user's artifact: dark radial wedges on the plaza ground,
   on the Switch AND on the PC (Renut); the SDK's Xenos emulation (PC, `tools/pc/frames.sh` without sa2_renderer=renut,
   frames now taken from its presenter with a 30 Hz clock) draws a smooth round dark disc there. Found with the new
   Renut diagnostics (`naruto_debug_skip_ps`, `naruto_debug_log_ps`, `naruto_debug_log_stencil`,

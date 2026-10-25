@@ -83,6 +83,11 @@ struct PipelineKey {
   // pass alpha); 0 = read at run time. Like the bools: a key with it not built yet draws with the generic one (0).
   uint32_t alpha_func;
   uint32_t reserved;  // 0 (the key is compared and hashed as bytes)
+  // naruto-nx (2026-10-25): the polygon offset (PA_SU_POLY_OFFSET_*, D3DRS_DEPTHBIAS / SLOPESCALEDEPTHBIAS) as the host
+  // depth bias: the constant in depth units and the slope factor (float bits). Renut ignored it; Naruto's ground shadows
+  // are decal meshes drawn with a GEQUAL test that need it (without, whole triangles failed: radial wedges).
+  int32_t depth_bias;
+  uint32_t depth_bias_slope;
 };
 
 // banjo-nx (banjo_gpu_blend_skip): for the key's other fields, 1 when its one target keeps its value for a source alpha

@@ -13,6 +13,10 @@ for d in plume reblue-XenosRecomp uam imgui; do
   rm -rf "$root/app/thirdparty/$d"
   git -C "$src" archive "$commit" "app/thirdparty/$d" | tar -x -C "$root/app/thirdparty" --strip-components=2
 done
+# naruto-nx's own changes to those trees (patches/thirdparty-*.patch, paths relative to app/thirdparty).
+for p in "$root"/patches/thirdparty-*.patch; do
+  [ -f "$p" ] && patch -p1 -d "$root/app/thirdparty" < "$p"
+done
 # DXC binaries (not in sa2-nx's tree): renderbag/dxc-bin at the commit naruto-rise-recomp pins.
 dxc="$root/app/thirdparty/reblue-XenosRecomp/thirdparty/dxc-bin"
 tmp=$(mktemp -d)

@@ -310,6 +310,9 @@ std::unique_ptr<plume::RenderPipeline> Build(const PipelineKey &key, const Pipel
                                              : plume::RenderCullMode::NONE;
   desc.frontFace = (key.mode_control & 4) ? plume::RenderFrontFace::CLOCKWISE
                                           : plume::RenderFrontFace::COUNTER_CLOCKWISE;
+  // naruto-nx: the polygon offset (PipelineKey::depth_bias).
+  desc.depthBias = key.depth_bias;
+  desc.slopeScaledDepthBias = std::bit_cast<float>(key.depth_bias_slope);
   static const bool no_depth_clip = REXCVAR_GET(naruto_debug_no_depth_clip);  // naruto-nx: diagnostic
   desc.depthClipEnabled = !no_depth_clip;
 

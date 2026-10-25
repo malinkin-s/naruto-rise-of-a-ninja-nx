@@ -58,6 +58,8 @@ REXCVAR_DEFINE_STRING(naruto_debug_skip_ps, "", "Nuts&Bolts/Debug",
 REXCVAR_DEFINE_BOOL(naruto_debug_index_race, false, "Nuts&Bolts/Debug",
                     "Diagnostic: hash each indexed draw's indices at the call and again when the render thread reads "
                     "them; log the draws whose indices changed in between");
+REXCVAR_DEFINE_BOOL(naruto_debug_no_tile_predication, false, "Nuts&Bolts/Debug",
+                    "Diagnostic: no draw is limited to one tile by the device's tile predication");
 REXCVAR_DEFINE_BOOL(naruto_debug_no_queued_reuse, false, "Nuts&Bolts/Debug",
                     "Diagnostic: a draw never reuses a stream fill another draw of the same kick queued");
 REXCVAR_DEFINE_BOOL(naruto_debug_no_stream_cache, false, "Nuts&Bolts/Debug",
@@ -66,6 +68,8 @@ REXCVAR_DEFINE_BOOL(naruto_debug_no_index_cache, false, "Nuts&Bolts/Debug",
                     "Diagnostic: every indexed draw reads its indices again (no cached index ranges)");
 REXCVAR_DEFINE_STRING(naruto_debug_no_stencil_ps, "", "Nuts&Bolts/Debug",
                       "Diagnostic: a pixel shader hash (hex) whose draws run without their stencil test");
+REXCVAR_DEFINE_STRING(naruto_debug_zalways_ps, "", "Nuts&Bolts/Debug",
+                      "Diagnostic: a pixel shader hash (hex) whose draws pass the depth test always");
 REXCVAR_DEFINE_STRING(naruto_debug_log_ps, "", "Nuts&Bolts/Debug",
                       "Diagnostic: a pixel shader hash (hex): log the vertex shaders it is drawn with, once each");
 
@@ -1330,7 +1334,8 @@ struct ViewportState {
 // The screen rect of the one tile a draw is predicated to while tiling
 // (SetTilesLocked); false for a draw that runs in more tiles, or none.
 bool PredicatedTile(const GuestDevice &device, ClearRect &rect) {
-  if (g_tiles.size() < 2)
+  static const bool no_tile_predication = REXCVAR_GET(naruto_debug_no_tile_predication);  // naruto-nx: diagnostic
+  if (g_tiles.size() < 2 || no_tile_predication)
     return false;
   u32 mask = device.U32(d3d::kDeviceOffsetPredication);
   mask = (mask ? mask : ~0u) & g_replay_predication;
@@ -3099,6 +3104,23 @@ PipelineKey MakeKey(const GuestDevice &device, const ShaderRecord *vs, const Sha
   key.stencil_ref_mask = t.depth ? u32(dev.m_ValuesPacket.StencilRefMask) & 0xFFFFFF : 0;
   key.stencil_ref_mask_bf = t.depth ? u32(dev.m_ValuesPacket.StencilRefMaskBF) & 0xFFFFFF : 0;
   key.mode_control = u32(cp.ModeControl) & 0x7;
+  // naruto-nx: the polygon offset, as the PC base (d3d/draw.cpp) and the SDK's non-ROV path do: the front face's
+  // offset unless that face is off or culled, then the back one's; PA_SU_POLY_OFFSET_FRONT/BACK_SCALE/OFFSET at device
+  // +10832..+10844 (the same in N&B's layout and Naruto's). Units: a 24-bit unorm depth step (k_24_8_FLOAT: 2^-21).
+  if (t.depth) {
+    const u32 mode = u32(cp.ModeControl);
+    const auto polyf = [&](u32 i) { return std::bit_cast<float>(device.U32(10832 + 4 * i)); };
+    float scale = 0.0f, offset = 0.0f;
+    if (((mode >> 11) & 1) && !(mode & 1)) { scale = polyf(0); offset = polyf(1); }
+    if (((mode >> 12) & 1) && !((mode >> 1) & 1) && scale == 0.0f && offset == 0.0f) { scale = polyf(2); offset = polyf(3); }
+    if (std::isfinite(scale) && std::isfinite(offset) && (scale != 0.0f || offset != 0.0f)) {
+      const bool float24 = (u32(dev.m_DestinationPacket.DepthInfo) >> 16) & 1;
+      int32_t bias = int32_t(std::ceil(std::abs(offset) * (float24 ? float(1u << 24) / 8.0f : float((1u << 24) - 1))));
+      if (float24) bias <<= 3;
+      key.depth_bias = offset < 0 ? -bias : bias;
+      key.depth_bias_slope = std::bit_cast<u32>(scale * (1.0f / 16.0f));  // kPolygonOffsetScaleSubpixelUnit
+    }
+  }
   key.alpha_to_coverage = (u32(cp.ColorControl) >> 4) & 1;
   if (primitive == kRectangleList) {
     if (State().rectangle_list_gs)
@@ -3174,6 +3196,10 @@ PipelineKey MakeKey(const GuestDevice &device, const ShaderRecord *vs, const Sha
           std::strtoull(REXCVAR_GET(naruto_debug_no_stencil_ps).c_str(), nullptr, 16);
       no_stencil_ps && ps && ps->hash == no_stencil_ps)
     key.depth_control &= ~1u;
+  // naruto-nx (naruto_debug_zalways_ps): that pixel shader's depth test always passes (a diagnostic).
+  if (static const uint64_t zalways_ps = std::strtoull(REXCVAR_GET(naruto_debug_zalways_ps).c_str(), nullptr, 16);
+      zalways_ps && ps && ps->hash == zalways_ps)
+    key.depth_control |= 7u << 4;
   // naruto-nx (naruto_debug_log_ps): the logged pixel shader's depth/stencil state, once per state.
   if (static const uint64_t log_ps = std::strtoull(REXCVAR_GET(naruto_debug_log_ps).c_str(), nullptr, 16);
       log_ps && ps && ps->hash == log_ps) {
