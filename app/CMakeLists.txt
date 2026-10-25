@@ -73,6 +73,18 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     endforeach()
 endif()
 
+# CPU step (2026-10-25, from sa2-nx's candidate 1 of 2026-10-12): the recompiled game code's `sqrt` without the errno
+# check (a compare and a branch to the C library after every fsqrt). Values are unchanged: nothing reads errno.
+# Not -fno-trapping-math: it may move a float operation across the code's flush-mode switches (sa2-nx's audit).
+option(NARUTO_GAME_NO_MATH_ERRNO "-fno-math-errno on the recompiled game code" ON)
+if(NARUTO_GAME_NO_MATH_ERRNO AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    foreach(target naruto_recomp naruto_AI2C)
+        if(TARGET ${target})
+            target_compile_options(${target} PRIVATE -fno-math-errno)
+        endif()
+    endforeach()
+endif()
+
 if(REXGLUE_PLATFORM_SWITCH)
     # An emulator (Ryujinx) starts NROs without argv[0]: the SDK then uses this path for the NRO's folder.
     if(TARGET rexcore)
