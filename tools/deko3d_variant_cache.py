@@ -27,7 +27,7 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-UAM = os.path.join(ROOT, 'out', 'deko3d_tools', 'uam-build', 'uam.exe')
+UAM = os.path.join(ROOT, 'out', 'deko3d_tools', 'uam-build', 'uam')  # naruto-nx: Linux
 TAG = b'uam110-sw8-bnx4\0'  # banjo_renut_deko3d.cpp kCacheTag (16 bytes with its terminator)
 DEFINE_RE = re.compile(r'#define SPIRV_CROSS_CONSTANT_ID_(\d+) (\S+)')
 
@@ -110,7 +110,9 @@ def read_cache(path):
 # samples, 4 blend controls, 9 more u32 fields (offset 108 on), bool_mask[8], bool_values[8], blend_skip, output_trim;
 # version 4 (2026-10-18) adds alpha_func at 180 (constant 903 + 1, banjo_deko3d_alpha_spec; version 3 had padding there)
 # and a reserved word.
-LIST_KEY_SIZES = {3: 184, 4: 192}
+# naruto-nx (2026-10-25): version 4 with the polygon offset (depth_bias, depth_bias_slope at 192): 200 bytes; no shader
+# constant comes from them.
+LIST_KEY_SIZES = {3: (184,), 4: (192, 200)}
 LIST_KEY_SIZE = 184
 OFF_BOOL_MASK, OFF_BOOL_VALUES, OFF_BLEND_SKIP, OFF_OUTPUT_TRIM, OFF_ALPHA_FUNC = 108, 140, 172, 176, 180
 OFF_PER_INSTANCE, OFF_RECT_LIST, OFF_POINT_SPRITE = 96, 100, 104
@@ -210,7 +212,7 @@ def read_list(path, blend_skip_on, alpha_guess=ALPHA_GUESS):
     alpha functions (903 values) also made for a pipeline with a pixel shader whose record has none."""
     data = open(path, 'rb').read()
     magic, version, key_size, streams = struct.unpack_from('<4sIII', data, 0)
-    if magic != b'RNPL' or LIST_KEY_SIZES.get(version) != key_size:
+    if magic != b'RNPL' or key_size not in LIST_KEY_SIZES.get(version, ()):
         sys.exit(f'deko3d_variant_cache: {path}: not a version 3 or 4 pipeline list ({magic}, {version}, {key_size})')
     at = 16
     out = []
@@ -268,6 +270,9 @@ def main():
     ap.add_argument('--blend-skip', action='store_true',
                     help="keep the lists' blend skip (banjo_renut_blend_skip = true); by default it is left out")
     ap.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4) - 2))
+    # naruto-nx: the variants as data for the installer page (which compiles them in the browser from the player's own
+    # GLSL): [[name, stage, defines, key hex], ...]; no game data in it (shader hashes and constants only).
+    ap.add_argument('--emit-variants')
     a = ap.parse_args()
 
     glsl_cache = {}
@@ -322,6 +327,7 @@ def main():
         sys.exit('deko3d_variant_cache: no pipelines (--list or --variants)')
 
     todo = {}
+    emitted = {}
     seen = set()  # (shader, defines) already hashed
     missing = 0
     lines = len(pipelines)
@@ -363,10 +369,14 @@ def main():
                     key = fnv1a64(variant_text(shader[0], defines).encode('utf-8'))
                 memo_new[mk] = key
                 todo.setdefault(key, (key, stage, lambda g=shader[0], d=defines: variant_text(g, d).encode('utf-8')))
+                emitted.setdefault(key, [name[:-5], stage, defines, f'{key:016x}'])
     os.makedirs(os.path.dirname(memo_path), exist_ok=True)
     json.dump(dict(memo, **memo_new), open(memo_path + '.tmp', 'w', encoding='utf-8'))
     os.replace(memo_path + '.tmp', memo_path)
 
+    if a.emit_variants:
+        json.dump(sorted(emitted.values()), open(a.emit_variants, 'w', encoding='utf-8'), separators=(',', ':'))
+        print(f'deko3d_variant_cache: {len(emitted)} variants -> {a.emit_variants}')
     entries = read_cache(a.merge)
     if a.dry_run:
         known = sum(1 for key in entries if key in todo)

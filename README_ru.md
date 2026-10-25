@@ -121,7 +121,7 @@ GPU (бои в 720p упираются в него) и нагрузка на CPU
 
 ### Установка
 
-См. [страницу релиза 0.1.0](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0).
+Через страницу-установщик, которая делает шейдеры игры из вашего диска: **https://malinkin-s.github.io/naruto-nx-installer/**. Шаги — на [странице релиза 0.1.0](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0).
 
 ### Сборка (в общих чертах)
 

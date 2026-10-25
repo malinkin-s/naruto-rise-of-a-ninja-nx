@@ -121,7 +121,7 @@ Taken from the renderer on a Nintendo Switch (half size, 640×360), version 0.1.
 
 ### Installing
 
-See [the 0.1.0 release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0).
+Through the installer page, which makes the game's shaders from your own disc: **https://malinkin-s.github.io/naruto-nx-installer/**. The steps are on [the 0.1.0 release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0).
 
 ### Building (outline)
 

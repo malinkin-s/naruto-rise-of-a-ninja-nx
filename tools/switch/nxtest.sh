@@ -24,7 +24,8 @@ port=${NX_LOG_PORT:-28780}
 host=$(ip -4 route get "$NX_IP" | grep -oP 'src \K\S+')
 dir="$root/out/runs/$name"; rm -rf "$dir"; mkdir -p "$dir"
 # The run's ELF, for the console's crash reports (addresses "naruto + 0x..."): a later build would not match them.
-cp "$root/out/nx/naruto" "$dir/naruto.elf"
+nro=${NX_NRO:-$root/out/nx/naruto.nro}  # NX_NRO: another build (out/nx-release/naruto.nro)
+cp "$(dirname "$nro")/naruto" "$dir/naruto.elf"
 started=$(date +%s)
 args=(--log_network="$host:$port" --test_exit_after_s="$secs")
 # NX_SHOTS="20 40 60": frames of the renderer at those seconds, sent with the log (default: every 20 s).
@@ -135,7 +136,7 @@ sleep 1
 python3 -I "$root/tools/switch/nx_wait.py" "$NX_IP" "${NX_WAIT:-900}" || { kill $listener 2>/dev/null; exit 1; }
 
 docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$root:$root" -w "$root" naruto-nx/devkita64 \
-  /opt/devkitpro/tools/bin/nxlink -a "$NX_IP" -p naruto-nx/naruto.nro out/nx/naruto.nro -- "${args[@]}" \
+  /opt/devkitpro/tools/bin/nxlink -a "$NX_IP" -p naruto-nx/naruto.nro "$nro" -- "${args[@]}" \
   || { kill $listener 2>/dev/null; echo "nxlink failed: is hbmenu in netloader mode (Y)?"; exit 1; }
 
 wait $listener || true
