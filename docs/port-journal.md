@@ -314,13 +314,15 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 - **Open world at stock clocks (2026-10-25, konoha2; the user played Konoha by hand)**: 19-30 FPS (was ~7 before
   the enhancements and codegen steps), ~2,000-2,900 draws a frame; both the GPU (23-52 ms a frame) and the render
   thread (15-37 ms, ~13 us a draw) limit it. The game's logic runs at 30 Hz there, so 30 FPS is the target.
-- **Store cards, built, NOT yet run on the console (2026-10-25)**: sa2-nx's `tools/store_cards.py` (banjo-nx's
+- **Store cards (2026-10-25, cards1 verify, cards2)**: sa2-nx's `tools/store_cards.py` (banjo-nx's
   CPU proposal 1; sa2-nx measured a quarter of the render thread on hashing cached vertex/index copies at every kick)
   as step 4 of `tools/post_codegen.sh`: cards on 109,461 default.xex and 22,590 AI2C stores (stack stores left plain).
   `g_banjo_store_cards` is a weak false in src/naruto_renut_glue.cpp and post_codegen appends the strong true to the
   generated code, so code without the cards can never be trusted with them. The SDK side (the card bytes in the
-  guest window's first MB, the CRT hooks and file reads marking them) came with the sa2-nx fork. Next: a console run
-  with `banjo_renut_store_cards_verify=true` (changes under clean cards must stay 0), then the render-thread A/B.
+  guest window's first MB, the CRT hooks and file reads marking them) came with the sa2-nx fork. cards1 with
+  `banjo_renut_store_cards_verify=true`: 0 changed under clean cards (vertex/index and textures), ~1.7 GB not hashed
+  per 10 s. cards2 (stock clocks, the same fight as opt6): render thread ~15 -> ~12 ms a frame, game thread
+  ~15 ms CPU a frame, no crash. Fights are GPU-bound (21-31 ms a frame at 460.8 MHz).
 
 ## Open questions and hypotheses
 
@@ -362,4 +364,5 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 | 2026-10-25 | opt3: codegen step 1 | 1020 / 460.8 / 1600 | fight vs Sasuke | 31-42 FPS | ~21.5 ms CPU a frame | 8-17 ms | 21-31 ms |
 | 2026-10-25 | opt6: + step 2, -fno-strict-aliasing, -ffp-contract=off | 1020 / 460.8 / 1600 | fight vs Sasuke | 31-45 FPS | ~17.5 ms CPU a frame | | |
 | 2026-10-25 | konoha1: step 3 (Neji vs Sasuke) | 1020 / 460.8 / 1600 | fight | 32-44 FPS | ~15.5 ms CPU a frame | 15-21 ms | 23-31 ms |
+| 2026-10-25 | cards2: step 3 + store cards | 1020 / 460.8 / 1600 | fight vs Sasuke | 32-47 FPS | ~15 ms CPU a frame | 7-14 ms | 21-31 ms |
 | 2026-10-25 | opt8: + step 3 (non_volatile_as_local, elide_lr_stores) | 1785 / 768 / 1600 (overclocked by hand) | fight vs Sasuke | 46-54 FPS | ~11 ms CPU a frame | 8-13 ms | 17-22 ms |
