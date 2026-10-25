@@ -15,9 +15,9 @@ The game's PowerPC code is statically recompiled with [ReXGlue](https://github.c
 emulated: Direct3D calls are drawn by Renut, a Direct3D-level renderer, on deko3d, the Switch's native graphics API.
 
 > [!IMPORTANT]
-> **[Version 0.1.0](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0) is the first test
+> **[Version 0.1.1](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.1) is the first test
 > build.** The story mode and fights play on a real console, but expect bugs and crashes. The game's files are not
-> included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0)).
+> included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.1)).
 
 ## Status
 
@@ -121,7 +121,7 @@ Taken from the renderer on a Nintendo Switch (half size, 640×360), version 0.1.
 
 ### Installing
 
-Through the installer page, which makes the game's shaders from your own disc: **https://malinkin-s.github.io/naruto-nx-installer/**. The steps are on [the 0.1.0 release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0).
+Through the installer page, which makes the game's shaders from your own disc: **https://malinkin-s.github.io/naruto-nx-installer/**. The steps are on [the 0.1.1 release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.1).
 
 ### Building (outline)
 

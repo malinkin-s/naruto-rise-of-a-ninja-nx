@@ -15,9 +15,9 @@ PowerPC-код игры статически перекомпилирован с
 вызовы Direct3D рисует Renut, рендерер уровня Direct3D, на deko3d — родном графическом API Switch.
 
 > [!IMPORTANT]
-> **[Версия 0.1.0](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0) — первая тестовая
+> **[Версия 0.1.1](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.1) — первая тестовая
 > сборка.** Сюжетный режим и бои играются на настоящей консоли, но возможны баги и вылеты. Файлов игры в сборке нет:
-> нужна своя копия игры (установка — [на странице релиза](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0)).
+> нужна своя копия игры (установка — [на странице релиза](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.1)).
 
 ## Состояние
 
@@ -121,7 +121,7 @@ GPU (бои в 720p упираются в него) и нагрузка на CPU
 
 ### Установка
 
-Через страницу-установщик, которая делает шейдеры игры из вашего диска: **https://malinkin-s.github.io/naruto-nx-installer/**. Шаги — на [странице релиза 0.1.0](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0).
+Через страницу-установщик, которая делает шейдеры игры из вашего диска: **https://malinkin-s.github.io/naruto-nx-installer/**. Шаги — на [странице релиза 0.1.1](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.1).
 
 ### Сборка (в общих чертах)
 
