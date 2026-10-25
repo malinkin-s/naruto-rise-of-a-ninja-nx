@@ -324,6 +324,11 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   per 10 s. cards2 (stock clocks, the same fight as opt6): render thread ~15 -> ~12 ms a frame, game thread
   ~15 ms CPU a frame, no crash. Fights are GPU-bound (21-31 ms a frame at 460.8 MHz).
 
+- **Render scale on the console (2026-10-25, res480)**: the GLSL package rebuilt without deko3d_glsl_opt's scale1 and
+  fragscale passes (`tools/switch/shader_package.sh`; 97 of 3,324 shaders differ), so Renut's PackageScales allows
+  `sa2_render_height_handheld`. 480 (853x480, 0.667x), the same fight at stock clocks: GPU 18-31 -> 8-16 ms a frame,
+  32-47 -> 46-58 FPS (the fight logic runs at 60). Softer image. The default stays 1280x720 until the user picks.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
@@ -365,4 +370,5 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 | 2026-10-25 | opt6: + step 2, -fno-strict-aliasing, -ffp-contract=off | 1020 / 460.8 / 1600 | fight vs Sasuke | 31-45 FPS | ~17.5 ms CPU a frame | | |
 | 2026-10-25 | konoha1: step 3 (Neji vs Sasuke) | 1020 / 460.8 / 1600 | fight | 32-44 FPS | ~15.5 ms CPU a frame | 15-21 ms | 23-31 ms |
 | 2026-10-25 | cards2: step 3 + store cards | 1020 / 460.8 / 1600 | fight vs Sasuke | 32-47 FPS | ~15 ms CPU a frame | 7-14 ms | 21-31 ms |
+| 2026-10-25 | res480: cards2 + 853x480 render | 1020 / 460.8 / 1600 | fight vs Sasuke | 46-58 FPS | | | 8-16 ms |
 | 2026-10-25 | opt8: + step 3 (non_volatile_as_local, elide_lr_stores) | 1785 / 768 / 1600 (overclocked by hand) | fight vs Sasuke | 46-54 FPS | ~11 ms CPU a frame | 8-13 ms | 17-22 ms |
