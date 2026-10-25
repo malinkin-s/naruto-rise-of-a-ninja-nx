@@ -4591,17 +4591,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     plume::Deko3DBindFetchData(s.command_list, base, u32(address - base) + sc.vertex_fetch_bytes);
     sc.vertex_fetch_data = address - base;
     // banjo-nx (2026-10-20): the 16-byte multiples tools/deko3d_glsl_opt.py's aw4 pass relies on.
-    // naruto-nx (naruto_debug_log_ps): the logged pixel shader's depth/stencil state, once per state.
-  if (static const uint64_t log_ps = std::strtoull(REXCVAR_GET(naruto_debug_log_ps).c_str(), nullptr, 16);
-      log_ps && ps && ps->hash == log_ps) {
-    static std::unordered_set<uint64_t> seen_states;
-    const uint64_t st = uint64_t(key.depth_control) << 32 ^ key.stencil_ref_mask ^ uint64_t(key.mode_control) << 24;
-    if (seen_states.insert(st).second)
-      RGPU_INFO("[naruto] PS {:016X} state: depth_control {:08X} ref/masks {:06X} mode_control {:08X} colour {} "
-                "blend {:08X}", ps->hash, key.depth_control, key.stencil_ref_mask, key.mode_control, key.color_count,
-                key.color_count ? u32(key.blend_control[0]) : 0u);
-  }
-  if (DiagCountsOn()) {  // sa2-nx (2026-10-20, sa2_renut_lean_diagnostics)
+    if (DiagCountsOn()) {  // sa2-nx (2026-10-20, sa2_renut_lean_diagnostics)
       u32 bits = u32(sc.vertex_fetch_data) | sc.vertex_fetch_bytes;
       for (u32 m = fetch_mask; m; m &= m - 1)
         bits |= sc.vertex_fetch_slots[64 + std::countr_zero(m)] & ~3u;
