@@ -158,6 +158,11 @@ void SendTestFiles() {
   const std::string path = std::string(RexSwitchLogDir()) + "rex_profile.log";
   const bool sent = SendFile(target, path, "rex_profile.log");
   REXLOG_INFO("test files: {} {}", path, sent ? "sent" : "NOT sent");
+  // A pad recording of this run (the SDK's input_record), kept on the PC for later runs' input_replay.
+  if (const std::string record = rex::cvar::GetFlagByName("input_record"); !record.empty()) {
+    const bool rec_sent = SendFile(target, record, "input.nxinput");
+    REXLOG_INFO("test files: {} {}", record, rec_sent ? "sent" : "NOT sent");
+  }
 #endif
 }
 

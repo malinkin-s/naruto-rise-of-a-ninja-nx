@@ -52,6 +52,19 @@
 #include "renut_engine/gpu/banjo_renut_record.h"  // banjo-nx (package 28b)
 #include <rex/cvar.h>
 
+// naruto-nx (2026-10-25): see NarutoDebugSkipPs.
+REXCVAR_DEFINE_STRING(naruto_debug_skip_ps, "", "Nuts&Bolts/Debug",
+                      "Diagnostic: comma-separated pixel shader hashes (hex) whose draws are not drawn");
+REXCVAR_DEFINE_BOOL(naruto_debug_index_race, false, "Nuts&Bolts/Debug",
+                    "Diagnostic: hash each indexed draw's indices at the call and again when the render thread reads "
+                    "them; log the draws whose indices changed in between");
+REXCVAR_DEFINE_BOOL(naruto_debug_no_stream_cache, false, "Nuts&Bolts/Debug",
+                    "Diagnostic: every vertex stream is copied again for every draw (no cached converted copies)");
+REXCVAR_DEFINE_BOOL(naruto_debug_no_index_cache, false, "Nuts&Bolts/Debug",
+                    "Diagnostic: every indexed draw reads its indices again (no cached index ranges)");
+REXCVAR_DEFINE_STRING(naruto_debug_log_ps, "", "Nuts&Bolts/Debug",
+                      "Diagnostic: a pixel shader hash (hex): log the vertex shaders it is drawn with, once each");
+
 // banjo-nx (2026-10-17, a diagnostic for the deko3d renderer's missing river water): draws that read memexport results
 // as vertices take them through the CPU path (wait for the export, read it back) instead of stream_convert_cs.
 REXCVAR_DEFINE_BOOL(banjo_renut_diag_no_stream_convert, false, "Banjo/Renut",
@@ -145,6 +158,21 @@ bool BlendSkipExcluded(const void *pixel_shader) {
   }();
   const auto *entry = static_cast<const ShaderCacheEntry *>(pixel_shader);
   return entry && !excluded.empty() && excluded.count(entry->hash);
+}
+
+// naruto-nx: naruto_debug_skip_ps, comma-separated pixel shader hashes (hex) whose draws are skipped (a diagnostic).
+bool NarutoDebugSkipPs(uint64_t hash) {
+  static const std::unordered_set<uint64_t> skipped = [] {
+    std::unordered_set<uint64_t> set;
+    const std::string list = REXCVAR_GET(naruto_debug_skip_ps);
+    for (size_t at = 0; at < list.size();) {
+      const size_t comma = std::min(list.find(',', at), list.size());
+      if (comma > at) set.insert(std::strtoull(list.substr(at, comma - at).c_str(), nullptr, 16));
+      at = comma + 1;
+    }
+    return set;
+  }();
+  return !skipped.empty() && skipped.count(hash);
 }
 
 constexpr u32 kMaxDrawVertices = 1u << 21;
@@ -2284,8 +2312,18 @@ bool PrepareGeometry(const GuestDevice &device, const DrawCall &call, Geometry &
       src = base + size_t(call.start_index) * (is32 ? 4 : 2);
       // Draw*IndexedPrimitiveUP indices are the game's own memory, only valid
       // during the call; these are an index buffer's.
+      if (call.naruto_index_hash) {
+        const uint64_t now = XXH3_64bits(src, size_t(call.count) * (is32 ? 4 : 2)) | 1;
+        static uint32_t changed = 0, checked = 0;
+        ++checked;
+        if (now != call.naruto_index_hash && (++changed <= 20 || (changed & (changed - 1)) == 0))
+          RGPU_WARN("[naruto] index race: {} indices from {:08X} (start {}) changed between the call and the render "
+                    "thread's read ({} of {} draws so far)", call.count, u32(ib->Address), call.start_index, changed,
+                    checked);
+      }
       index_key = IndexKey{src, call.count, call.primitive, endian, is32};
-      cacheable_indices = call.count <= kMaxDrawIndices;
+      static const bool no_index_cache = REXCVAR_GET(naruto_debug_no_index_cache);
+      cacheable_indices = call.count <= kMaxDrawIndices && !no_index_cache;
       if (cacheable_indices && CachedIndexDraw(index_key, call, g))
         return true;
     }
@@ -2636,10 +2674,20 @@ bool BindStreams(const GuestDevice &device, const DrawCall &call, const ShaderRe
       count = std::min(count, src.vertex_count - first);
     else
       count = src.data ? 0 : count;
+    // naruto-nx (2026-10-25): indices past the end of the stream as its fetch constant sizes it: those vertices are not
+    // uploaded (they read as zero: triangles pulled to one point). Logged once per vertex shader and stream.
+    if (!constant && src.data && count < g.vertex_range) {
+      static std::unordered_set<uint64_t> warned;
+      if (warned.insert(vs.hash ^ (uint64_t(stream) << 60)).second)
+        RGPU_WARN("[naruto] VS {:016X} stream {}: indices reach vertex {} but the stream holds {} from vertex {} "
+                  "(stride {}): {} vertices not uploaded", vs.hash, stream, first + g.vertex_range - 1,
+                  src.vertex_count, first, src.stride, g.vertex_range - count);
+    }
     const u32 bytes = std::max<u32>(count, 1) * hs.host_stride;
     const bool fills = src.data && count;
     const u8 *guest = fills ? src.data + size_t(first) * src.stride : nullptr;
-    const bool queued = fills && !(stream == 0 && call.up_vertices);
+    static const bool no_stream_cache = REXCVAR_GET(naruto_debug_no_stream_cache);
+    const bool queued = fills && !(stream == 0 && call.up_vertices) && !no_stream_cache;
     const StreamKey key{guest, layout_hash, stream, src.stride, count, src.endian};
     // sa2-nx (2026-10-20, sa2_renut_lean_diagnostics): the dump's check once, not a call per stream.
     static const bool stream_dump = !REXCVAR_GET(sa2_renut_lean_diagnostics) ||
@@ -3900,6 +3948,22 @@ VertexDeclarationRecord &NoDeclaration() {
 
 } // namespace
 
+// naruto-nx (naruto_debug_index_race): see draw.h.
+uint64_t NarutoIndexHashNow(u32 device_va, const DrawCall &call) {
+  static const bool on = REXCVAR_GET(naruto_debug_index_race);
+  if (!on || !call.indexed || call.up_indices || !call.count)
+    return 0;
+  const auto *device = GuestPtr<const be_u32>(device_va + d3d::kDeviceOffsetIndexBuffer);
+  const auto *ib = device ? GuestPtr<const d3d::IndexBuffer>(u32(*device)) : nullptr;
+  if (!ib)
+    return 0;
+  const bool is32 = (u32(ib->resource.Common) & d3d::kIndexBufferCommon32Bit) != 0;
+  const u8 *base = AddressPtr(ib->Address);
+  if (!base)
+    return 0;
+  return XXH3_64bits(base + size_t(call.start_index) * (is32 ? 4 : 2), size_t(call.count) * (is32 ? 4 : 2)) | 1;
+}
+
 namespace detail {
 
 void FinishRecordingLocked(VideoState &) {
@@ -4180,6 +4244,24 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
         SurfaceDescWords(g_targets_reuse.va[i], g_targets_reuse.desc[i]);
       }
       g_targets_reuse.targets = targets;
+    }
+  }
+  // naruto-nx (2026-10-25, diagnostic): draws whose pixel shader is in naruto_debug_skip_ps are not drawn (finding the
+  // draw behind an artifact by bisecting the shaders of a frame; the list comes from banjo_renut_diag_gpu_shaders).
+  if (ps && NarutoDebugSkipPs(ps->hash))
+    return true;
+  // naruto_debug_log_ps: the vertex shaders a pixel shader is drawn with, once each (for banjo_renut_diag_stream_dump_vs).
+  if (static const uint64_t log_ps = std::strtoull(REXCVAR_GET(naruto_debug_log_ps).c_str(), nullptr, 16);
+      log_ps && ps && ps->hash == log_ps) {
+    static std::unordered_set<uint64_t> seen;
+    if (seen.insert(vs->hash).second) {
+      std::string elements;
+      if (declaration)
+        for (const GuestVertexElement &e : declaration->elements)
+          elements += fmt::format(" [stream {} offset {} type {:08X} usage {} index {}]", u32(e.Stream), u32(e.Offset),
+                                  u32(e.Type), e.Usage, e.UsageIndex);
+      RGPU_INFO("[naruto] PS {:016X} drawn with VS {:016X}: primitive {}, {} vertices/indices; declaration{}",
+                ps->hash, vs->hash, call.primitive, call.count, declaration ? elements : std::string(" none"));
     }
   }
   // banjo-nx (2026-10-20, NOT exact, banjo_renut_fur_shells = N > 1, the user's call): the fur family's meshes are drawn

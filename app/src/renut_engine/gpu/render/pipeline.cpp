@@ -60,6 +60,11 @@ REXCVAR_DEFINE_STRING(renut_pipeline_list, "pipeline_list.bin", "Nuts&Bolts/Grap
                       "The pipelines the renderer has built, which it builds ahead of use at the "
                       "next start (delete it to start over)");
 
+// naruto-nx (2026-10-25): nothing is culled (finding draws whose triangles vanish).
+REXCVAR_DEFINE_BOOL(naruto_debug_no_cull, false, "Nuts&Bolts/Debug", "Diagnostic: no draw culls its triangles");
+REXCVAR_DEFINE_BOOL(naruto_debug_log_stencil, false, "Nuts&Bolts/Debug",
+                    "Diagnostic: log the stencil state of each pipeline that tests or writes stencil, once");
+
 namespace renut::gpu {
 
 namespace {
@@ -296,7 +301,9 @@ std::unique_ptr<plume::RenderPipeline> Build(const PipelineKey &key, const Pipel
   // Points have no facing; their sprites are never culled.
   const bool cull_front = !key.point_sprite && (key.mode_control & 1);
   const bool cull_back = !key.point_sprite && (key.mode_control & 2);
-  desc.cullMode = cull_front && !cull_back   ? plume::RenderCullMode::FRONT
+  static const bool no_cull = REXCVAR_GET(naruto_debug_no_cull);  // naruto-nx: diagnostic
+  desc.cullMode = no_cull ? plume::RenderCullMode::NONE
+                  : cull_front && !cull_back   ? plume::RenderCullMode::FRONT
                   : cull_back && !cull_front ? plume::RenderCullMode::BACK
                                              : plume::RenderCullMode::NONE;
   desc.frontFace = (key.mode_control & 4) ? plume::RenderFrontFace::CLOCKWISE
@@ -331,6 +338,16 @@ std::unique_ptr<plume::RenderPipeline> Build(const PipelineKey &key, const Pipel
     }
   }
   desc.depthTargetFormat = key.depth_format;
+  // naruto-nx (2026-10-25, diagnostic naruto_debug_log_stencil): each pipeline that writes stencil, once.
+  if (static const bool log_stencil = REXCVAR_GET(naruto_debug_log_stencil); log_stencil && (dc & 1)) {
+    RGPU_INFO("[naruto] stencil pipeline: depth_control {:08X} (front func {} fail {} pass {} zfail {}; back{} func {} "
+              "fail {} pass {} zfail {}) ref/masks {:06X} bf {:06X} mode_control {:08X} (cull front {} back {}, front "
+              "face {}) colour targets {}",
+              dc, (dc >> 8) & 7, (dc >> 11) & 7, (dc >> 14) & 7, (dc >> 17) & 7, (dc & 0x80) ? "" : " (as front)",
+              (dc >> 20) & 7, (dc >> 23) & 7, (dc >> 26) & 7, (dc >> 29) & 7, key.stencil_ref_mask,
+              key.stencil_ref_mask_bf, key.mode_control, key.mode_control & 1, (key.mode_control >> 1) & 1,
+              (key.mode_control & 4) ? "CW" : "CCW", key.color_count);
+  }
 
   desc.renderTargetCount = key.color_count;
   for (uint32_t i = 0; i < key.color_count; ++i) {

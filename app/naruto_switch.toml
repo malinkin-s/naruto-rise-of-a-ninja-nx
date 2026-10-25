@@ -1,0 +1,13 @@
+# Naruto: Rise of a Ninja (Switch) settings, read at start. Delete this file to get the defaults back.
+# Настройки Naruto: Rise of a Ninja (Switch), читаются при запуске. Удалите файл, чтобы вернуть значения по умолчанию.
+
+# Render resolution (height): 480, 720 or 1080. Lower is faster, higher is sharper. The image always fills the screen.
+# Разрешение рендера (высота): 480, 720 или 1080. Меньше — быстрее, больше — чётче. Картинка всегда на весь экран.
+#   Handheld / портатив (GPU 460 MHz): 720 = fights 32-47 FPS, 480 = 46-58 FPS (fights run at 60, the village at 30).
+sa2_render_height_handheld = 720
+#   Docked / в доке (GPU 768 MHz): 1080 is too heavy for this game.
+sa2_render_height_docked = 720
+
+# The game's own anti-aliasing (4x MSAA): 0 = on, as on the Xbox 360; 1 = off (rougher edges, about 10 % less GPU).
+# Сглаживание самой игры (4x MSAA): 0 = включено, как на Xbox 360; 1 = выключено (рёбра грубее, GPU примерно на 10 % легче).
+naruto_guest_msaa_max = 0

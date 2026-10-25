@@ -22,6 +22,10 @@
 #include "renut_engine/gpu/banjo_renut_select.h"
 #include "renut_engine/gpu/overlay/app_integration.h"
 #include "sa2_capture.h"
+#include <atomic>
+#include <chrono>
+#include <thread>
+extern std::atomic<uint64_t> g_sa2_game_frames;  // src/sa2_capture.cpp: the recorder's game frame clock
 #endif
 
 #if defined(NARUTO_BUILTIN_CONFIG)
@@ -79,8 +83,24 @@ class NarutoApp : public rex::ReXApp {
     return rex::ReXApp::OnFinalizePaths(defaults, std::move(resume));
   }
   void OnPostSetup() override {
-    if (banjo::renut_gpu::Active())
+    if (banjo::renut_gpu::Active()) {
       sa2::capture::StartWithSource([](rex::ui::RawImage& image) { return renut::gpu::CaptureFrame(image); });
+      return;
+    }
+    // Xenos emulation (the reference picture for Renut's): frames from the SDK's presenter, as sa2-nx does. The
+    // recorder paces itself by game frames, which SA2's main-loop hooks counted; Naruto has none, so a 30 Hz clock
+    // stands in (a reference picture needs the moment, not the exact frame).
+    new std::thread([] {
+      for (;;) {
+        std::this_thread::sleep_for(std::chrono::microseconds(33333));
+        g_sa2_game_frames.fetch_add(1, std::memory_order_relaxed);
+      }
+    });
+    sa2::capture::Start([this]() -> rex::ui::Presenter* {
+      const auto* rt = runtime();
+      const auto* graphics = rt ? rt->graphics_system() : nullptr;
+      return graphics ? graphics->presenter() : nullptr;
+    });
   }
   void OnShutdown() override {
     if (banjo::renut_gpu::Active()) renut::gpu::ShutdownRenderer();
@@ -94,6 +114,15 @@ class NarutoApp : public rex::ReXApp {
     naruto::StartTestExitTimer(app_context(), [this] {
       if (window()) window()->RequestClose();
     });
+  }
+
+  // Without a naruto.toml next to the NRO, the player's default one is written there (app/naruto_switch.toml).
+  std::string_view DefaultConfigFile() const override {
+#if defined(NARUTO_BUILTIN_CONFIG)
+    return kNarutoPlayerConfig;
+#else
+    return {};
+#endif
   }
 
   // The Switch build's fixed settings (app/naruto_switch_defaults.toml, compiled in), applied before naruto.toml.

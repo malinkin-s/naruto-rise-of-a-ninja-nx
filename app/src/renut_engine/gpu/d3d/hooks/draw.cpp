@@ -129,6 +129,7 @@ void D3DDevice_DrawIndexedVertices_hook(u32 device, u32 primitive, u32 base_vert
   call.base_vertex = i32(base_vertex);
   call.start_index = start_index;
   call.count = index_count;
+  call.naruto_index_hash = NarutoIndexHashNow(device, call);
   if (IsRecordingCommandBuffer(device))
     RecordDraw(device, call, 0, 0);
   else

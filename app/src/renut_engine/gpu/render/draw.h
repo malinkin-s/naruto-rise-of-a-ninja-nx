@@ -53,7 +53,15 @@ struct DrawCall {
   u32 up_vertex_count = 0;
   const u8 *up_indices = nullptr;
   bool up_indices_32 = false;
+
+  // naruto-nx (2026-10-25, diagnostic naruto_debug_index_race): the draw's index bytes hashed on the game thread at
+  // the call, compared when the render thread reads them (0 = not taken).
+  uint64_t naruto_index_hash = 0;
 };
+
+// naruto-nx: the index bytes of an indexed draw as the bound index buffer holds them now (game thread), 0 when the
+// diagnostic is off or there is no index buffer.
+uint64_t NarutoIndexHashNow(u32 device_va, const DrawCall &call);
 
 // Reads the guest vertex buffers (and vertex fetch buffers) the draws recorded
 // since the last call use into their host copies. Draws leave the reads for

@@ -20,6 +20,15 @@ set(REXSDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sdk" CACHE PATH "Path to rexglue-
 
 include(generated/rexglue.cmake)
 
+# The PC build re-runs the generator by itself whenever an input in codegen.d changes (manifest, tomls, xex, the
+# generator binary). That rewrites app/generated without the optimised flavour's post-codegen steps (no-volatile guest
+# memory, loop barriers, direct calls, store cards; it happened on 2026-10-25), so they are appended to the same
+# command (from sa2-nx). Every step is idempotent. The Switch cross build has no generator target: tools/codegen.sh.
+if(TARGET naruto_codegen)
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/generated/default/codegen.build.stamp" APPEND
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/../tools/post_codegen.sh")
+endif()
+
 set(NARUTO_SOURCES
     src/main.cpp
     src/naruto_test_exit.cpp
@@ -98,6 +107,9 @@ if(REXGLUE_PLATFORM_SWITCH)
     # Settings compiled into the NRO (naruto_switch_defaults.toml).
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/naruto_switch_defaults.toml" NARUTO_BUILTIN_CONFIG)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/naruto_switch_defaults.toml")
+    # And the player's naruto.toml, written next to the NRO when it is missing (src/naruto_app.h DefaultConfigFile).
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/naruto_switch.toml" NARUTO_PLAYER_CONFIG)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/naruto_switch.toml")
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/naruto_builtin_config.h.in"
                    "${CMAKE_CURRENT_BINARY_DIR}/builtin_config/naruto_builtin_config.h" @ONLY)
     target_include_directories(naruto PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/builtin_config")

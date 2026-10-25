@@ -329,6 +329,20 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   `sa2_render_height_handheld`. 480 (853x480, 0.667x), the same fight at stock clocks: GPU 18-31 -> 8-16 ms a frame,
   32-47 -> 46-58 FPS (the fight logic runs at 60). Softer image. The default stays 1280x720 until the user picks.
 
+- **Ground shadow wedges in Konoha (2026-10-25, open)**: the user's artifact: dark radial wedges on the plaza ground,
+  on the Switch AND on the PC (Renut); the SDK's Xenos emulation (PC, `tools/pc/frames.sh` without sa2_renderer=renut,
+  frames now taken from its presenter with a 30 Hz clock) draws a smooth round dark disc there. Found with the new
+  Renut diagnostics (`naruto_debug_skip_ps`, `naruto_debug_log_ps`, `naruto_debug_log_stencil`,
+  `naruto_debug_no_index_cache`, `naruto_debug_no_stream_cache`, `naruto_debug_index_race`, `naruto_debug_no_cull`)
+  and the deterministic PC recording new_game_to_autosave1: skipping PS F3B309BF6DE665D3 (with VS 21FBA449AABA14E9:
+  COLOR0 = lerp(c38, 1, pow(sat(c39.x * COLOR1.x), c39.y)), a darkening pass) removes them. Ruled out: the deko3d
+  depth options, the GLSL passes (a package without any: same), index/stream caches, an index race (hashes at the
+  call and at the read always equal), index width, the vertex range, culling, COLOR1 binding (declaration COLOR1 at
+  +12, D3DCOLOR, location 13). The stencil is used as a mask only (REPLACE with ALWAYS / EQUAL / NOTEQUAL, ref 0x80,
+  0x40, object ids 1-11; no incr/decr: not shadow volumes): next, which stencil writes give the 0x80 mask the
+  darkening tests, against the Xenos picture. Also: the PC build re-ran the generator and dropped the post-codegen
+  steps; `tools/post_codegen.sh` is now appended to the build's codegen command.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
