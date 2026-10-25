@@ -367,6 +367,18 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   (layout by position, Joy-Con sideways, remapping, rumble), single Joy-Con jutsu assist; (5) speed: the open world
   is CPU-bound (nearly a stable 30 at 1785 MHz): Gemini's plans in out/gemini/plans/.
 
+- **Installer, shaders compiled in advance, guest cores (2026-10-25)**: the installer page is live
+  (https://malinkin-s.github.io/naruto-nx-installer/, repo malinkin-s/naruto-nx-installer): two files of the disc in,
+  zip out (naruto.nro, deko3d_glsl.bin, deko3d_shaders.bin); its worker runs in Node too (test/worker_node.mjs) and the
+  user's browser output matched the manifest's SHA-256 for all three. uam for WebAssembly
+  (tools/wasm/build_uam_web.sh): DKSH byte-identical to the native tool for all 3,324 shaders; the variant list
+  (tools/deko3d_variant_cache.py --emit-variants from a console pipeline list, key size 200 accepted) gives 3,278
+  variants in ~46 s. Console (rel1 -> rel2, release NRO, 480p handheld): run-time compiles 1,033 (277 ms each) -> 25;
+  the user felt no more loading hitches. Remaining dips to ~16 FPS in Konoha are CPU: render thread 85 % (core 1),
+  a guest worker 77 % (cores 1-2), the main thread 70 % (core 0), and the game's audio starved (68-98 requests without
+  data per 10 s: the music stutters). `naruto_guest_cores` (new, the other guest threads' core mask) = 7 lets them use
+  core 0's idle time: rel3 at most 6 requests without data, lowest 10 s 19.4 FPS; now the default.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
