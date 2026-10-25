@@ -311,6 +311,17 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   fight, Neji vs Sasuke, not Konoha): ~15.5 ms CPU a frame (opt6 ~17.5, classic ~23.4: -34 %), fights 32-44 FPS,
   GPU-bound (23-31 ms). Lesson: check the report's "clocks:" line before comparing two runs.
 
+- **Open world at stock clocks (2026-10-25, konoha2; the user played Konoha by hand)**: 19-30 FPS (was ~7 before
+  the enhancements and codegen steps), ~2,000-2,900 draws a frame; both the GPU (23-52 ms a frame) and the render
+  thread (15-37 ms, ~13 us a draw) limit it. The game's logic runs at 30 Hz there, so 30 FPS is the target.
+- **Store cards, built, NOT yet run on the console (2026-10-25)**: sa2-nx's `tools/store_cards.py` (banjo-nx's
+  CPU proposal 1; sa2-nx measured a quarter of the render thread on hashing cached vertex/index copies at every kick)
+  as step 4 of `tools/post_codegen.sh`: cards on 109,461 default.xex and 22,590 AI2C stores (stack stores left plain).
+  `g_banjo_store_cards` is a weak false in src/naruto_renut_glue.cpp and post_codegen appends the strong true to the
+  generated code, so code without the cards can never be trusted with them. The SDK side (the card bytes in the
+  guest window's first MB, the CRT hooks and file reads marking them) came with the sa2-nx fork. Next: a console run
+  with `banjo_renut_store_cards_verify=true` (changes under clean cards must stay 0), then the render-thread A/B.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |

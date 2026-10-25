@@ -9,9 +9,10 @@
 SA2_ENHANCEMENT(g_vsync_relaxed, sa2_vsync_relaxed, sa2::enh::kNonCpu, true,
                 "Relaxed vsync: a frame that misses its vertical blank is shown at once instead of waiting for the next");
 
-// sa2-nx cpu/sa2_hot_guest.cpp: whether the generated code marks store cards (tools/store_cards.py). Not run for Naruto
-// yet: Renut then hashes its cached copies, as before store cards.
-extern "C" const bool g_banjo_store_cards = false;
+// sa2-nx cpu/sa2_hot_guest.cpp: whether the generated code marks store cards (tools/store_cards.py). Weak false here;
+// tools/post_codegen.sh appends the strong `true` to the generated code when it marks them, so a build of code without
+// the cards (NARUTO_CLASSIC) can never trust them (Renut would keep stale vertex and index copies).
+extern "C" __attribute__((weak)) const bool g_banjo_store_cards = false;
 
 // sa2-nx me/me_pc_stubs.cpp: the Switch profiler's counters, no-ops on the PC.
 #if !REX_PLATFORM_SWITCH
