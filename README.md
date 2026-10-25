@@ -15,29 +15,30 @@ The game's PowerPC code is statically recompiled with [ReXGlue](https://github.c
 emulated: Direct3D calls are drawn by Renut, a Direct3D-level renderer, on deko3d, the Switch's native graphics API.
 
 > [!IMPORTANT]
-> Work in progress. The game boots and is playable on the console up to a fight, but it is slow and not ready for
-> playing. There are no releases yet. The repository has no game data and no code made from it: you need your own
-> copy of the game.
+> **[Version 0.1.0](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0) is the first test
+> build.** The story mode and fights play on a real console, but expect bugs and crashes. The game's files are not
+> included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0)).
 
 ## Status
 
-**Stage 6 (Switch) of the port, as of 2026-10-24.** The NRO runs on a real console: logos, menus, loading a save and
-a full fight, with the right picture. Next: frame rate.
+**Version 0.1.0, 2026-10-25.** Measured on a Nintendo Switch at stock clocks (handheld, CPU 1020 MHz, GPU 460 MHz).
 
 | Area | Switch | Notes |
 |---|---|---|
-| Boot, Scaleform logos, menus | **Works** | 24–29 FPS in menus |
-| Saves on the SD card | **Works** | Created, listed and loaded (`sdmc:/switch/naruto-nx/`) |
-| Fights | **Works, slow** | Picture right, no artifacts seen; 15–25 FPS (the game runs fights at 60) |
-| Open world (first story scene) | **Renders, slow** | ~7 FPS; artifacts seen once, being investigated |
-| Bink video (cutscenes) | Partly checked | The intro plays; the story cutscenes still to check |
-| Controller | Scripted input checked | Automated runs press buttons; a long session by hand still to do |
-| Audio | Not checked | |
-| Character DLC (3 extra engines) | Not yet | Behind a CMake option, after memory is measured |
-| Performance work | Not started | No LTO/PGO, no precompiled shader cache, debug logging still on |
+| Boot, logos, menus | **Works** | 24–29 FPS in menus |
+| Story mode (Konoha, the open world) | **Works** | about 20 FPS (the game's logic runs at 30); ground shadows fixed |
+| Fights | **Works** | 32–47 FPS at 1280×720, 46–58 FPS at 854×480 (fights run at 60) |
+| Saves on the SD card | **Works** | Created, listed and loaded |
+| Bink video (cutscenes) | **Works** | The intro and the first story scenes; not checked through the whole game |
+| Controller | **Works** | Played by hand in the story mode |
+| Settings (`naruto.toml`) | **Works** | Render resolution handheld / docked, the game's anti-aliasing |
+| Audio | Plays | Not checked in depth |
+| Character DLC (3 extra engines) | Not yet | |
+| Known issues | | Possible crashes when quitting; the "Saved Game Warning" scroll border differs from the Xbox 360 |
 
-On the PC (Linux, the same code with Renut on Vulkan): intro, menus, Konoha with villagers, dialogue, the tutorial,
-a fight, and saves that are written and loaded back, at 30 FPS.
+Performance so far: sa2-nx's enhancements, an optimised code generator (registers as locals, direct calls, guest
+memory without volatile, float-mode switches skipped), store cards for Renut's caches. Next: the GPU (fights are
+GPU-bound at 720p) and the CPU work of the open world.
 
 ### What was solved to get here
 
@@ -48,16 +49,33 @@ a fight, and saves that are written and loaded back, at 30 FPS.
 - **Tiled rendering**: the game draws its 3D scene in three 1280×256 tiles with 4× MSAA (the Xbox 360's EDRAM);
   Renut's targets now cover all tiles.
 - **The game engine `ai2c.dll`** is linked into the NRO as a static module.
-- **Automated console tests over nxlink** (`tools/switch/nxtest.sh`): the game runs for a set time, sends its log and
-  renderer frames to the PC, and exits by itself.
+- **Automated console tests over nxlink** (`tools/switch/nxtest.sh`): the game runs for a set time, sends its log,
+  renderer frames, its profile and crash reports to the PC, and exits by itself.
+- **Ground shadows**: the game's polygon offset (depth bias) was ignored by Renut, which cut decal shadows into wedges.
 
 The full story, with evidence for every step, is in [docs/port-journal.md](docs/port-journal.md).
 
 ## Screenshots
 
-Taken from the renderer on a Nintendo Switch (half size, 640×360), automated run of 2026-10-24.
+Taken from the renderer on a Nintendo Switch (half size, 640×360), version 0.1.0 at stock clocks.
 
 <table>
+  <tr>
+    <td><img src="docs/media/switch_konoha_plaza.jpg" alt="Konoha, story mode"></td>
+    <td><img src="docs/media/switch_konoha.jpg" alt="Konoha plaza"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Story mode: Konoha</sub></td>
+    <td align="center"><sub>The village plaza</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/switch_fight_hit.jpg" alt="Fight, a hit"></td>
+    <td><img src="docs/media/switch_fight_combo.jpg" alt="Fight, a combo"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Naruto vs Sasuke</sub></td>
+    <td align="center"><sub>A combo</sub></td>
+  </tr>
   <tr>
     <td><img src="docs/media/switch_menu.jpg" alt="Single player menu"></td>
     <td><img src="docs/media/switch_jutsu_select.jpg" alt="Jutsu list"></td>
@@ -100,6 +118,10 @@ Taken from the renderer on a Nintendo Switch (half size, 640×360), automated ru
 | PC base and reference | [jorjbarbosa/naruto-rise-recomp](https://github.com/jorjbarbosa/naruto-rise-recomp): seeds, hooks, the Direct3D map |
 | Renderer | Renut (masterspike52) on plume's deko3d back end, from sa2-nx, retargeted to Naruto's Direct3D |
 | Toolchain | devkitA64 (GCC 16.1) in Docker, libnx, deko3d |
+
+### Installing
+
+See [the 0.1.0 release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.0).
 
 ### Building (outline)
 

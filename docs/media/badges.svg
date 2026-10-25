@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="791" height="74" viewBox="0 0 791 74" role="img" aria-label="status: runs on Switch · menus and fights · slow · platform: Nintendo Switch (homebrew) · renderer: Renut · deko3d · license: GPL-3.0">
-  <title>status: runs on Switch · menus and fights · slow · platform: Nintendo Switch (homebrew) · renderer: Renut · deko3d · license: GPL-3.0</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="791" height="74" viewBox="0 0 791 74" role="img" aria-label="status: 0.1.0 · first test build · story ~20 FPS, fights 32-47 FPS · platform: Nintendo Switch (homebrew) · renderer: Renut · deko3d · license: GPL-3.0">
+  <title>status: 0.1.0 · first test build · story ~20 FPS, fights 32-47 FPS · platform: Nintendo Switch (homebrew) · renderer: Renut · deko3d · license: GPL-3.0</title>
   <g font-family="'IBM Plex Sans','Segoe UI',Helvetica,Arial,sans-serif" font-size="16">
   <rect x="0.0" y="0" width="75" height="32" fill="#1C2024"/>
   <rect x="75.0" y="0" width="716.0" height="32" fill="#5CA382"/>
   <text x="14.0" y="21.6" fill="#E6E1D3" textLength="47" lengthAdjust="spacingAndGlyphs">status</text>
-  <text x="433.0" y="21.6" fill="#14171A" font-weight="700" text-anchor="middle" textLength="320" lengthAdjust="spacingAndGlyphs">runs on Switch · menus and fights · slow</text>
+  <text x="433.0" y="21.6" fill="#14171A" font-weight="700" text-anchor="middle" textLength="414" lengthAdjust="spacingAndGlyphs">0.1.0 · first test build · story ~20 FPS, fights 32-47 FPS</text>
   <rect x="0.0" y="42" width="95" height="32" fill="#1C2024"/>
   <rect x="95.0" y="42" width="262.0" height="32" fill="#7FA0B4"/>
   <text x="14.0" y="63.6" fill="#E6E1D3" textLength="67" lengthAdjust="spacingAndGlyphs">platform</text>
