@@ -33,3 +33,19 @@ fp_moves_modeless = true
 fp_compares_modeless = true
 fp_mode_lookahead = true
 fp_mode_lookahead_past_branch = false
+# CPU step 2 (2026-10-25, sa2-nx's second and third CPU rounds and banjo-nx's codegen round, as perf_overrides.toml):
+#   fcti_inline: fctid / fctiw / fctidz through rex::ppc helpers (fcvtzs) instead of an isnan test, a range compare
+#     and simde's scalar conversion; also rounds fctid/fctiw in the current mode as the Xbox 360 (simde rounded halves
+#     away from zero);
+#   div_inline: divw / divwu / divd / divdu as AArch64's sdiv / udiv (they define a zero divisor and INT_MIN / -1, so
+#     the C guards and their branch go);
+#   fp_copy_pairs / fp_copy_forwarding: a float copied through a register (lfs then stfs, also through fneg / fabs)
+#     as a bit copy, with no flush-mode switch;
+#   rotate_word_shifts: rlwinm / rlwimi as the plain shifts their masks make (one instruction instead of 2-3);
+#   dcbt_prefetch: the guest's dcbt / dcbtst cache hints as host prefetches.
+fcti_inline = true
+div_inline = true
+fp_copy_pairs = true
+fp_copy_forwarding = true
+rotate_word_shifts = true
+dcbt_prefetch = true
