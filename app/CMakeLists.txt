@@ -33,6 +33,7 @@ set(NARUTO_SOURCES
     src/main.cpp
     src/naruto_test_exit.cpp
     src/naruto_test_shots.cpp
+    src/naruto_save_thumbnail.cpp
 )
 if(REXGLUE_PLATFORM_SWITCH)
     list(APPEND NARUTO_SOURCES src/naruto_static_modules.cpp src/naruto_no_gpu_plugin.cpp)

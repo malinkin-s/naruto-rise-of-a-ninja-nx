@@ -47,14 +47,18 @@ def main():
     with tempfile.TemporaryDirectory(dir=a.out) as tmp:
         files = [fwd(os.path.relpath(os.path.join(a.glsl, n))) for n in names]
         dict_path = fwd(os.path.relpath(os.path.join(tmp, 'dict')))
-        subprocess.run([ZSTD, '--train', '-q', '--maxdict=131072', '-o', dict_path, '-r', fwd(os.path.relpath(a.glsl))],
-                       check=True)
+        # naruto-nx: a handful of shaders (the release build's run-time ones) is too few to train a dictionary on: none
+        # then (dictionary size 0, as the installer page's packages).
+        use_dict = len(files) >= 16
+        if use_dict:
+            subprocess.run([ZSTD, '--train', '-q', '--maxdict=131072', '-o', dict_path, '-r',
+                            fwd(os.path.relpath(a.glsl))], check=True)
         zdir = fwd(os.path.relpath(os.path.join(tmp, 'z')))
         os.makedirs(zdir, exist_ok=True)
         for i in range(0, len(files), 300):
-            subprocess.run([ZSTD, f'-{a.level}', '-q', '-f', '-D', dict_path, '--output-dir-flat', zdir] + files[i:i + 300],
-                           check=True)
-        dictionary = open(dict_path, 'rb').read()
+            subprocess.run([ZSTD, f'-{a.level}', '-q', '-f'] + (['-D', dict_path] if use_dict else []) +
+                           ['--output-dir-flat', zdir] + files[i:i + 300], check=True)
+        dictionary = open(dict_path, 'rb').read() if use_dict else b''
         entries = []
         data = bytearray()
         for n in names:

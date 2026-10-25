@@ -350,6 +350,23 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   darkening tests, against the Xenos picture. Also: the PC build re-ran the generator and dropped the post-codegen
   steps; `tools/post_codegen.sh` is now appended to the build's codegen command.
 
+- **Plan after 0.1.0 (2026-10-25)**: (1) no game shaders in the release: an installer page (fork of
+  ChanseyIsTheBest/sa2-nx-installer, GPL-3.0, in ~/Projects/naruto-nx-installer) makes deko3d_glsl.bin from the
+  player's disc (default.xex image + xeshader.sdb, scanned as tools/naruto_dump_shaders.py); the release NRO
+  (`SA2_RENUT_RELEASE_SHADERS=ON`, `NX_BUILD_DIR=out/nx-release`, `tools/renut_release_shaders.py`) carries only the
+  two shaders the game builds at run time (ps_CFF1F16A5DE43698, vs_1C09DC313D5EC669: captured from guest memory, in
+  no file). Node test (installer test/naruto_deko3d_node.mjs): all 3,322 disc shaders translated in 104 s; the GLSL
+  differs from the native chain's (DXC 2025.1 in the page vs the system's 1.10): to be checked on the console;
+  (2) shaders compiled in advance: the DKSH cache (deko3d_shaders.bin) made in the page with uam built for
+  WebAssembly, from a pipeline list collected from console sessions, so the console does not compile at first use
+  (stutters, CPU at 100 %); (3) the save picture (black on Load Game): the game resolves the frame into a 320x180
+  R5G6B5 texture and D3DX-saves it from guest memory, which Renut never wrote: port the PC base's WriteBackResolve
+  (a read back of the resolve at D3DTexture lock, sub_8212C7E8) on Renut's ReadRenderTargetLocked-style read back;
+  the PC base's thumbnail race guard (sub_8211D878, sub_820ECD38, sub_820C0018: a double capture corrupted the heap)
+  is ported (src/naruto_save_thumbnail.cpp); (4) Switch controls: expose the SDK's input options in naruto.toml
+  (layout by position, Joy-Con sideways, remapping, rumble), single Joy-Con jutsu assist; (5) speed: the open world
+  is CPU-bound (nearly a stable 30 at 1785 MHz): Gemini's plans in out/gemini/plans/.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |

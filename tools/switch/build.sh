@@ -8,7 +8,7 @@
 # check, the Vulkan headers come from sdk/thirdparty/vulkan-headers.
 set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
-build="$root/out/nx"
+build="${NX_BUILD_DIR:-$root/out/nx}"  # NX_BUILD_DIR: another build tree (out/nx-release: SA2_RENUT_RELEASE_SHADERS=ON)
 stub="$root/out/nx-deps/nvk-stub"
 if [ ! -f "$stub/lib/libvulkan.a" ]; then mkdir -p "$stub/lib" && ar rc "$stub/lib/libvulkan.a"; fi
 reconfigure=0; [ "$1" = "-reconfigure" ] && { reconfigure=1; shift; }

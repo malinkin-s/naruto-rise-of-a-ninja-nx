@@ -241,6 +241,10 @@ bool PackageScales() {
     for (Package &p : all.source) {
       if (!p.ok)
         continue;
+      // naruto-nx: a package of a few shaders (the release NRO's built-in run-time shaders, none of them sampling a
+      // scaled texture) says nothing about scale1; only a package of the game's shaders decides.
+      if (p.header->count < 64)
+        continue;
       any = true;
       bool found = false;
       std::vector<char> text;
