@@ -128,7 +128,11 @@ if(REXGLUE_PLATFORM_SWITCH)
     target_sources(naruto_renut_gpu PRIVATE "${CMAKE_SOURCE_DIR}/src/renut_engine/gpu/banjo_renut_deko3d.cpp")
     if(EXISTS "${BANJO_DEKO3D_GLSL_CPP}")
         target_sources(naruto_renut_gpu PRIVATE "${BANJO_DEKO3D_GLSL_CPP}")
-        set_source_files_properties("${BANJO_DEKO3D_GLSL_CPP}" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+        # The .cpp embeds deko3d_glsl.bin with .incbin: a new package (tools/switch/shader_package.sh) must rebuild it,
+        # which nothing told CMake (a stale package stayed in the NRO, 2026-10-25).
+        get_filename_component(_naruto_glsl_dir "${BANJO_DEKO3D_GLSL_CPP}" DIRECTORY)
+        set_source_files_properties("${BANJO_DEKO3D_GLSL_CPP}" PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+            OBJECT_DEPENDS "${_naruto_glsl_dir}/deko3d_glsl.bin")
     elseif(SA2_RENUT_RELEASE_SHADERS)
         message(STATUS "sa2: no GLSL package built in (SA2_RENUT_RELEASE_SHADERS): deko3d_glsl.bin beside the NRO")
     else()
