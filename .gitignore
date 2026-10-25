@@ -56,3 +56,7 @@ tools/switch/nx.env
 
 # Renderer third-party trees (tools/fetch_renut_deps.sh)
 /app/thirdparty/
+
+# Packages made by the installer page (game shaders)
+installer test/
+naruto-nx_*/
