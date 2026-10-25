@@ -58,10 +58,14 @@ REXCVAR_DEFINE_STRING(naruto_debug_skip_ps, "", "Nuts&Bolts/Debug",
 REXCVAR_DEFINE_BOOL(naruto_debug_index_race, false, "Nuts&Bolts/Debug",
                     "Diagnostic: hash each indexed draw's indices at the call and again when the render thread reads "
                     "them; log the draws whose indices changed in between");
+REXCVAR_DEFINE_BOOL(naruto_debug_no_queued_reuse, false, "Nuts&Bolts/Debug",
+                    "Diagnostic: a draw never reuses a stream fill another draw of the same kick queued");
 REXCVAR_DEFINE_BOOL(naruto_debug_no_stream_cache, false, "Nuts&Bolts/Debug",
                     "Diagnostic: every vertex stream is copied again for every draw (no cached converted copies)");
 REXCVAR_DEFINE_BOOL(naruto_debug_no_index_cache, false, "Nuts&Bolts/Debug",
                     "Diagnostic: every indexed draw reads its indices again (no cached index ranges)");
+REXCVAR_DEFINE_STRING(naruto_debug_no_stencil_ps, "", "Nuts&Bolts/Debug",
+                      "Diagnostic: a pixel shader hash (hex) whose draws run without their stencil test");
 REXCVAR_DEFINE_STRING(naruto_debug_log_ps, "", "Nuts&Bolts/Debug",
                       "Diagnostic: a pixel shader hash (hex): log the vertex shaders it is drawn with, once each");
 
@@ -2703,12 +2707,19 @@ bool BindStreams(const GuestDevice &device, const DrawCall &call, const ShaderRe
         if (cached->proven_flush != g_flush_serial &&
             CardsProve(key.guest, size_t(key.count) * key.stride, cached->proven_flush, cached->hash)) {
           cached->proven_flush = g_flush_serial;  // banjo-nx: banjo_renut_store_cards
+          if (dumped)
+            RGPU_INFO("[streamdump] stream {}: cached copy proven by the cards (flush {}); bytes now {}", stream,
+                      g_flush_serial,
+                      ExactHash(key.guest, size_t(key.count) * key.stride) == cached->hash ? "the same" : "CHANGED");
         } else if (cached->proven_flush != g_flush_serial) {
           const bool same = ExactHash(key.guest, size_t(key.count) * key.stride) == cached->hash;
           g_card_diag[7] += same && cached->proven_flush != UINT64_MAX && banjo::renut_gpu::StoreCardsVerifyOn();
           banjo::renut_gpu::CountExactCheck(uint64_t(key.count) * key.stride, !same,
                                             cached->exact_frame == g_stream_cache_frame);
           cached->exact_frame = g_stream_cache_frame;
+          if (dumped)
+            RGPU_INFO("[streamdump] stream {}: cached copy hashed: {} (flush {})", stream,
+                      same ? "same" : "changed, dropped", g_flush_serial);
           if (same) {
             cached->proven_flush = g_flush_serial;
           } else {
@@ -2734,8 +2745,13 @@ bool BindStreams(const GuestDevice &device, const DrawCall &call, const ShaderRe
         continue;
       }
     }
-    const UploadAllocation *queued_alloc = queued ? FindQueuedStream(key) : nullptr;
+    static const bool no_queued_reuse = REXCVAR_GET(naruto_debug_no_queued_reuse);
+    const UploadAllocation *queued_alloc = queued && !no_queued_reuse ? FindQueuedStream(key) : nullptr;
     const bool reused = queued_alloc != nullptr;
+    if (dumped)
+      RGPU_INFO("[streamdump] stream {}: {} (cached {}, copy {}, dynamic {}, flush {})", stream,
+                reused ? "reuses a queued fill of this kick" : "a new fill at the kick", cached != nullptr,
+                cached && cached->copy ? 1 : 0, cached && cached->dynamic ? 1 : 0, g_flush_serial);
     UploadAllocation alloc = reused ? *queued_alloc : Video::UploadsLocked().Allocate(bytes, 16);
     if (!alloc)
       return false;
@@ -3152,6 +3168,21 @@ PipelineKey MakeKey(const GuestDevice &device, const ShaderRecord *vs, const Sha
       key.reserved |= 1u;
     else if (ab_off == 16 && banjo::renut_gpu::Gpr32On())
       key.reserved |= 2u;
+  }
+  // naruto-nx (naruto_debug_no_stencil_ps): that pixel shader's draws without the stencil test (a diagnostic).
+  if (static const uint64_t no_stencil_ps =
+          std::strtoull(REXCVAR_GET(naruto_debug_no_stencil_ps).c_str(), nullptr, 16);
+      no_stencil_ps && ps && ps->hash == no_stencil_ps)
+    key.depth_control &= ~1u;
+  // naruto-nx (naruto_debug_log_ps): the logged pixel shader's depth/stencil state, once per state.
+  if (static const uint64_t log_ps = std::strtoull(REXCVAR_GET(naruto_debug_log_ps).c_str(), nullptr, 16);
+      log_ps && ps && ps->hash == log_ps) {
+    static std::unordered_set<uint64_t> seen_states;
+    const uint64_t st = uint64_t(key.depth_control) << 32 ^ key.stencil_ref_mask ^ uint64_t(key.mode_control) << 24;
+    if (seen_states.insert(st).second)
+      RGPU_INFO("[naruto] PS {:016X} key: depth_control {:08X} ref/masks {:06X} mode_control {:08X} colour {} "
+                "blend {:08X}", ps->hash, key.depth_control, key.stencil_ref_mask, key.mode_control, key.color_count,
+                key.color_count ? u32(key.blend_control[0]) : 0u);
   }
   return key;
 }
@@ -4560,7 +4591,17 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     plume::Deko3DBindFetchData(s.command_list, base, u32(address - base) + sc.vertex_fetch_bytes);
     sc.vertex_fetch_data = address - base;
     // banjo-nx (2026-10-20): the 16-byte multiples tools/deko3d_glsl_opt.py's aw4 pass relies on.
-    if (DiagCountsOn()) {  // sa2-nx (2026-10-20, sa2_renut_lean_diagnostics)
+    // naruto-nx (naruto_debug_log_ps): the logged pixel shader's depth/stencil state, once per state.
+  if (static const uint64_t log_ps = std::strtoull(REXCVAR_GET(naruto_debug_log_ps).c_str(), nullptr, 16);
+      log_ps && ps && ps->hash == log_ps) {
+    static std::unordered_set<uint64_t> seen_states;
+    const uint64_t st = uint64_t(key.depth_control) << 32 ^ key.stencil_ref_mask ^ uint64_t(key.mode_control) << 24;
+    if (seen_states.insert(st).second)
+      RGPU_INFO("[naruto] PS {:016X} state: depth_control {:08X} ref/masks {:06X} mode_control {:08X} colour {} "
+                "blend {:08X}", ps->hash, key.depth_control, key.stencil_ref_mask, key.mode_control, key.color_count,
+                key.color_count ? u32(key.blend_control[0]) : 0u);
+  }
+  if (DiagCountsOn()) {  // sa2-nx (2026-10-20, sa2_renut_lean_diagnostics)
       u32 bits = u32(sc.vertex_fetch_data) | sc.vertex_fetch_bytes;
       for (u32 m = fetch_mask; m; m &= m - 1)
         bits |= sc.vertex_fetch_slots[64 + std::countr_zero(m)] & ~3u;

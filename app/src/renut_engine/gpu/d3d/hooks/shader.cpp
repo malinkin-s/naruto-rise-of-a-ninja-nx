@@ -540,6 +540,13 @@ void NarutoNoteDeclaration(u32 declaration_va) {
   const u32 count = std::min<u32>(u32(words[0x18 / 4]), 63);
   const auto *elements = GuestPtr<const GuestVertexElement>(declaration_va + 0x34);
   const uint64_t hash = XXH3_64bits(elements, size_t(count) * sizeof(GuestVertexElement)) ^ count;
+  // The same declaration as this thread's previous draw (most draws): nothing to do, without the lock and the map.
+  thread_local u32 last_va = 0;
+  thread_local uint64_t last_hash = 0;
+  if (declaration_va == last_va && hash == last_hash)
+    return;
+  last_va = declaration_va;
+  last_hash = hash;
   static std::mutex mutex;
   static std::unordered_map<u32, uint64_t> seen;
   {

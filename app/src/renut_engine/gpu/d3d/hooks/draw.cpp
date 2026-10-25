@@ -728,50 +728,21 @@ BANJO_RENUT_HOOK_RAW(sub_821398C8) {  // D3DDevice_Resolve
 // (D3DPT_TRIANGLEFAN, 4 vertices, stride 20); the title then writes the vertices and ends with the inline EndVertices
 // (m_pRing = device + 13428, kDeviceOffsetVerticesRingEnd).
 void NarutoNoteDeclaration(u32 declaration_va);  // shader.cpp
-uint64_t NarutoHashShaderNow(u32 shader_va, bool pixel);  // shader.cpp
 
 namespace {
-std::atomic<uint32_t> g_naruto_draw_calls[3];
 void NoteBoundDeclaration(u32 device) {
   NarutoNoteDeclaration(LoadU32(device + d3d::kDeviceOffsetVertexDeclaration));
 }
-void NoteNarutoDraw(int kind, const PPCContext &ctx) {
-  static const char *const kNames[] = {"DrawIndexedVertices", "DrawVertices", "BeginVertices"};
-  const uint32_t n = g_naruto_draw_calls[kind].fetch_add(1) + 1;
-  if (n <= 3 || (n & (n - 1)) == 0)
-    RGPU_INFO("[naruto] {} #{}: window {:08X} {:08X} {:08X}; r4 {} r5 {} r6 {} r7 {}; predication {:08X} {:08X} {:08X} "
-              "tile predication {:08X} flags {:08X}", kNames[kind], n, LoadU32(ctx.r3.u32 + 0x28C0),
-              LoadU32(ctx.r3.u32 + 0x28C4), LoadU32(ctx.r3.u32 + 0x28C8), ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32,
-              LoadU32(ctx.r3.u32 + native::off::Predication), LoadU32(ctx.r3.u32 + native::off::RunPredicationState),
-              LoadU32(ctx.r3.u32 + native::off::PredicationSet), LoadU32(ctx.r3.u32 + native::off::TilePredication),
-              LoadU32(ctx.r3.u32 + native::off::Flags));
-  if (n <= 3) {
-    const u32 vs = LoadU32(ctx.r3.u32 + d3d::kDeviceOffsetVertexShader), ps = LoadU32(ctx.r3.u32 + d3d::kDeviceOffsetPixelShader);
-    RGPU_INFO("[naruto]   bound vs {:08X} hash now {:016X}, ps {:08X} hash now {:016X}", vs, NarutoHashShaderNow(vs, false),
-              ps, NarutoHashShaderNow(ps, true));
-    std::string c;
-    for (u32 i = 0; i < 16; ++i) {
-      const u32 bits = LoadU32(ctx.r3.u32 + 0x780 + 4 * i);
-      float v;
-      std::memcpy(&v, &bits, 4);
-      c += fmt::format("{} ", v);
-    }
-    RGPU_INFO("[naruto]   device VS constants c0-c3: {}", c);
-  }
-}
 }  // namespace
 BANJO_RENUT_HOOK_RAW(sub_82137E00) {
-  NoteNarutoDraw(0, ctx);
   NoteBoundDeclaration(ctx.r3.u32);
   D3DDevice_DrawIndexedVertices_hook(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
 }
 BANJO_RENUT_HOOK_RAW(sub_82137A18) {
-  NoteNarutoDraw(1, ctx);
   NoteBoundDeclaration(ctx.r3.u32);
   D3DDevice_DrawVertices_hook(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
 }
 BANJO_RENUT_HOOK_RAW(sub_821375A0) {
-  NoteNarutoDraw(2, ctx);
   NoteBoundDeclaration(ctx.r3.u32);
   ctx.r3.u64 = D3DDevice_BeginVertices_hook(ctx.r3.u32, 5, 4, 20);
 }

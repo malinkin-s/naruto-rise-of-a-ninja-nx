@@ -62,6 +62,8 @@ REXCVAR_DEFINE_STRING(renut_pipeline_list, "pipeline_list.bin", "Nuts&Bolts/Grap
 
 // naruto-nx (2026-10-25): nothing is culled (finding draws whose triangles vanish).
 REXCVAR_DEFINE_BOOL(naruto_debug_no_cull, false, "Nuts&Bolts/Debug", "Diagnostic: no draw culls its triangles");
+REXCVAR_DEFINE_BOOL(naruto_debug_no_depth_clip, false, "Nuts&Bolts/Debug",
+                    "Diagnostic: no draw clips its triangles at the near and far planes (depth clamped instead)");
 REXCVAR_DEFINE_BOOL(naruto_debug_log_stencil, false, "Nuts&Bolts/Debug",
                     "Diagnostic: log the stencil state of each pipeline that tests or writes stencil, once");
 
@@ -308,7 +310,8 @@ std::unique_ptr<plume::RenderPipeline> Build(const PipelineKey &key, const Pipel
                                              : plume::RenderCullMode::NONE;
   desc.frontFace = (key.mode_control & 4) ? plume::RenderFrontFace::CLOCKWISE
                                           : plume::RenderFrontFace::COUNTER_CLOCKWISE;
-  desc.depthClipEnabled = true;
+  static const bool no_depth_clip = REXCVAR_GET(naruto_debug_no_depth_clip);  // naruto-nx: diagnostic
+  desc.depthClipEnabled = !no_depth_clip;
 
   // RB_DEPTHCONTROL.
   const u32 dc = key.depth_control;
