@@ -379,6 +379,13 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   data per 10 s: the music stutters). `naruto_guest_cores` (new, the other guest threads' core mask) = 7 lets them use
   core 0's idle time: rel3 at most 6 requests without data, lowest 10 s 19.4 FPS; now the default.
 
+- **CPU steps 1-2 and the worst spot (2026-10-25, cpu2)**: `-fno-math-errno` on the game code and the generator
+  options fcti_inline, div_inline, fp_copy_pairs, fp_copy_forwarding, rotate_word_shifts, dcbt_prefetch (PC replay
+  unchanged). Console, release NRO, 480p, the user stood still facing Konoha's heaviest view: 20 FPS steady; render
+  thread 93 % of core 1 (~47 ms busy a frame, ~3,780 draws a frame, ~12.4 us a draw), a guest worker 85 %, the main
+  thread 80 % of core 0 (~40 ms a frame), GPU ~33 ms a frame; audio misses 0-6 per 10 s. All three cores saturated.
+  Handoff to Gemini: docs/HANDOFF.md.
+
 ## Open questions and hypotheses
 
 | Question | Hypotheses | Cheapest experiment that separates them | Result |
