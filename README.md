@@ -47,15 +47,16 @@ render thread uses about 21 % less CPU time a frame than in the plain build of 0
 The profile is in [pgo/](pgo/) (branch counters only). Moving the renderer's command recording to the free core (the
 experimental option `naruto_deko3d_record_worker`, off by default) was measured and is slower, so it stays off.
 
-#### Four CPU cores (optional)
+#### HOME Menu forwarder and the fourth CPU core (recommended)
 
-A Switch game normally runs on three of the four cores; the fourth is shared with the system. With four cores the
-audio mixer, the XMA decoder and the game's thread pool move to it and stop competing with the game's heavy threads.
-The core count is chosen by the launcher, so this needs a HOME Menu forwarder: install [Sphaira](https://github.com/ITotalJustice/sphaira),
-select `naruto.nro`, install a forwarder with **CPU cores = 4** and **address space = 39-bit**, and start the game from
-the new HOME Menu icon. Check `process cores 4 (mask 0xF)` in `logs/rex/rex_profile.log`. Started from hbmenu the port
-works as before, on three cores. The fourth core is shared with the HOME Menu, overlays and background services:
-please report anything odd in long sessions.
+**It is recommended to make a HOME Menu forwarder in [Sphaira](https://github.com/ITotalJustice/sphaira)**: select
+`naruto.nro`, install a forwarder with **CPU cores = 4** and **address space = 39-bit**, and start the game from the new
+HOME Menu icon. The 39-bit address space gives the game the memory of a game (applet mode has too little), and the fourth
+CPU core takes the audio mixer, the XMA decoder and the game's thread pool away from the game's heavy threads: smoother play and
+clean sound. The core count is chosen by the launcher, which is why a forwarder is needed. Check `process cores 4 (mask 0xF)`
+in `logs/rex/rex_profile.log`. Without a forwarder the port starts from hbmenu with a title override (hold **R** while starting
+any game) and works on three cores. The fourth core is shared with the HOME Menu, overlays and background services: please
+report anything odd in long sessions. A ready-made forwarder is not shipped (an NSP is signed with the console's keys).
 
 ### What was solved to get here
 

@@ -12,8 +12,10 @@ measure it.
   https://malinkin-s.github.io/naruto-nx-installer/ (repo `malinkin-s/naruto-nx-installer`, local `~/Projects/naruto-nx-installer`):
   two files of their disc (`default.xex`, `xeshader.sdb`) in, a zip out (`naruto.nro`, `deko3d_glsl.bin`, `deko3d_shaders.bin`).
   0.1.2 and 0.1.3 did not change the shader package or the DKSH cache (same `package_sha256` / `cache_sha256` as 0.1.1); only
-  the manifest's `version`, `nro_sha256`, `nro_size` change. **A HOME Menu forwarder NSP is not attached yet**: making one
-  needs the console's keys (an NSP is signed) or an export from Sphaira on a console; players make it in Sphaira (README).
+  the manifest's `version`, `nro_sha256`, `nro_size` change. **No HOME Menu forwarder NSP is shipped** (user's decision, 2026-10-29): an NSP is
+  signed with the console's keys; README, release notes and the installer page recommend making one in Sphaira (CPU cores 4,
+  address space 39-bit). Other ports: most ship none; mass-effect-nx and fungalspores ship one built with their own keys
+  (Forwarder-Mod 9853bd9 + hacBrewPack).
 - **Works on the console**: boot, menus, saves, cutscenes, story mode (Konoha), fights, controller, sound.
 - **Performance** (the user's observation for 0.1.3: CPU 1785 / GPU 768 MHz, handheld, 480p, four cores: fights 60 FPS with rare
   dips, the open Konoha about 30 FPS with rare dips; the very heaviest spot of the village was not measured with the final build):

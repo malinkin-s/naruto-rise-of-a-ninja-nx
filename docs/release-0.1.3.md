@@ -33,11 +33,11 @@ were not measured again.
 1. Open the installer page **https://malinkin-s.github.io/naruto-nx-installer/**, choose `default.xex` and `xeshader.sdb` of your
    own extracted disc, and extract the zip it makes to the root of the SD card. Copy your disc's files into
    `switch/naruto-nx/game/`.
-2. Start `naruto.nro` from hbmenu (three cores), or make a HOME Menu forwarder (four cores, better sound and smoother play): in
-   [Sphaira](https://github.com/ITotalJustice/sphaira) select `naruto.nro`, install a forwarder with **CPU cores = 4** and
-   **address space = 39-bit**, start the game from the new icon. `switch/naruto-nx/logs/rex/rex_profile.log` then says
-   `process cores 4 (mask 0xF)`. The fourth core is shared with the HOME Menu, overlays and background services; long sessions
-   are not tested much.
+2. **Recommended: make a HOME Menu forwarder in [Sphaira](https://github.com/ITotalJustice/sphaira)**: select `naruto.nro`, install a
+   forwarder with **CPU cores = 4** and **address space = 39-bit**, and start the game from the new icon (smoother play, cleaner
+   sound). `switch/naruto-nx/logs/rex/rex_profile.log` then says `process cores 4 (mask 0xF)`. The fourth core is shared with the
+   HOME Menu, overlays and background services; long sessions are not tested much. A ready-made forwarder is not shipped (an NSP is
+   signed with the console's keys). Without it, start the Homebrew Menu by holding **R** while starting any game (three cores).
 3. For the figures above: overclock the console by hand (CPU 1785 MHz, GPU 768 MHz) and set `sa2_render_height_handheld = 480`
    in `switch/naruto-nx/naruto.toml` (written at the first start).
 
@@ -85,10 +85,11 @@ Nintendo. **Файлов игры в сборке нет: нужна своя к
 
 1. Откройте страницу-установщик **https://malinkin-s.github.io/naruto-nx-installer/**, выберите `default.xex` и `xeshader.sdb`
    вашего распакованного диска и распакуйте полученный zip в корень SD-карты. Скопируйте файлы диска в `switch/naruto-nx/game/`.
-2. Запустите `naruto.nro` из hbmenu (три ядра) или сделайте форвардер в HOME-меню (четыре ядра: звук чище, игра плавнее): в
-   [Sphaira](https://github.com/ITotalJustice/sphaira) выберите `naruto.nro`, установите форвардер с **CPU cores = 4** и
-   **address space = 39-bit**, запускайте игру новым значком. В `switch/naruto-nx/logs/rex/rex_profile.log` будет
-   `process cores 4 (mask 0xF)`. Четвёртое ядро делится с HOME-меню, оверлеями и фоновыми службами; долгие сеансы проверены мало.
+2. **Рекомендуется сделать форвардер в HOME-меню через [Sphaira](https://github.com/ITotalJustice/sphaira)**: выберите `naruto.nro`,
+   установите форвардер с **CPU cores = 4** и **address space = 39-bit** и запускайте игру новым значком (игра плавнее, звук чище).
+   В `switch/naruto-nx/logs/rex/rex_profile.log` будет `process cores 4 (mask 0xF)`. Четвёртое ядро делится с HOME-меню, оверлеями
+   и фоновыми службами; долгие сеансы проверены мало. Готовый форвардер не прилагается (NSP подписывается ключами консоли). Без
+   него запустите Homebrew Menu, удерживая **R** при запуске любой игры (три ядра).
 3. Для цифр выше: разгоните консоль вручную (CPU 1785 МГц, GPU 768 МГц) и поставьте `sa2_render_height_handheld = 480` в
    `switch/naruto-nx/naruto.toml` (файл создаётся при первом запуске).
 
