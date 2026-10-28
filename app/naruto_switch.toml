@@ -8,6 +8,34 @@ sa2_render_height_handheld = 720
 #   Docked / в доке (GPU 768 MHz): 1080 is too heavy for this game.
 sa2_render_height_docked = 720
 
-# The game's own anti-aliasing (4x MSAA): 0 = on, as on the Xbox 360; 1 = off (rougher edges, about 10 % less GPU).
-# Сглаживание самой игры (4x MSAA): 0 = включено, как на Xbox 360; 1 = выключено (рёбра грубее, GPU примерно на 10 % легче).
-naruto_guest_msaa_max = 0
+# The game's own anti-aliasing (4x MSAA): 0 = on, as on the Xbox 360; 1 = off (rougher edges, about 10-15 % less GPU).
+# Сглаживание самой игры (4x MSAA): 0 = включено, как на Xbox 360; 1 = выключено (быстрее GPU на 10-15 %, меньше просадок).
+naruto_guest_msaa_max = 1
+
+# Буферизация звука: очередь 14 фреймов и емкость семафора 32 фрейма
+audio_switch_frames_in_queue = 14
+audio_maxqframes = 32
+
+# Скользящее окно ФС: 1 МБ окно для потокового чтения аудио (160 КБ soundxe.big читается 1 раз, следующие 5 раз из RAM)
+sa2_io_window_kb = 1024
+sa2_io_windows_max = 16
+
+# Кэш диапазонов файлов: кэшировать блоки от 64 КБ (захватывает 160 КБ soundxe.big в RAM)
+sa2_io_ranges_min_kb = 64
+# Размер кэша файлов в RAM (1024 МБ из 2.5 ГБ доступной свободной памяти; полностью вмещает soundxe.big без вытеснений)
+sa2_io_ranges_mb = 1024
+
+
+# Experimental / Экспериментально (0.1.2). Off by default; turn on to test, report what you see.
+# Выключено по умолчанию; включите, чтобы проверить, и напишите, что увидели.
+#
+# Command recording of the renderer on another core (deko3d): the render thread, the limit in the open world, hands
+# plume's command recording to a worker. Best with the fourth core (a forwarder started with 4 cores, see README).
+# Запись команд рендерера на другом ядре (deko3d): render thread, предел в открытом мире, отдаёт запись команд плюма
+# рабочему потоку. Лучше всего с четвёртым ядром (форвардер с 4 ядрами, см. README).
+# naruto_deko3d_record_worker = true
+#
+# Cores of the other guest threads: 7 = cores 0-2, 15 = all four when the game was started with four cores (the cores
+# the process does not have are dropped). Ядра остальных гостевых потоков: 7 = ядра 0-2, 15 = все четыре, если игра
+# запущена с четырьмя ядрами (недоступные ядра отбрасываются).
+# naruto_guest_cores = 15

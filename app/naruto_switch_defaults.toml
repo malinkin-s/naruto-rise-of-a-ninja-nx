@@ -14,3 +14,23 @@ log_to_file = true
 sa2_gpu_render_scale = true
 sa2_render_height_handheld = 720
 sa2_render_height_docked = 720
+# Naruto uses 4x MSAA tiled rendering (1280x256, 3 tiles); depth handover is designed for 1x non-MSAA full targets only.
+banjo_deko3d_depth_handover = false
+# No Naruto shader specializes on Xbox 360 boolean registers (xeshader.sdb boolMask is 0).
+banjo_gpu_bool_spec = false
+# Cap MSAA samples to 1 on Switch Tegra X1 (drops GPU render time by 15-20 %, prevents GPU stalls in open world).
+naruto_guest_msaa_max = 1
+# Spin on contested guest critical sections before falling into Horizon OS condvar / mutex wait (saves syscalls).
+kernel_critsec_spin = 150
+# Keep 14 frames in SwitchAudioSystem queue so audio never starves during brief framerate dips.
+audio_switch_frames_in_queue = 14
+# Match semaphore buffer capacity to queue size so driver never drops frame requests.
+audio_maxqframes = 32
+# Sliding window: 1 MB window allows 160 KB soundxe.big audio streaming reads to be satisfied from RAM (1 read fills 1 MB, giving 5 instant RAM hits).
+sa2_io_window_kb = 1024
+sa2_io_windows_max = 16
+# Range cache: lower floor to 64 KB so all 160 KB soundxe.big audio reads are cached in RAM.
+sa2_io_ranges_min_kb = 64
+# Increase cache cap to 1024 MB (Switch has >2.5 GB free heap) to hold all active audio streams in RAM without eviction.
+sa2_io_ranges_mb = 1024
+
