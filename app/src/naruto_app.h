@@ -11,6 +11,7 @@
 #include <rex/ui/window.h>
 
 #include "cpu/sa2_enhancements.h"
+#include "naruto_pgo.h"
 #include "naruto_test_exit.h"
 #include "naruto_test_shots.h"
 
@@ -83,6 +84,8 @@ class NarutoApp : public rex::ReXApp {
     return rex::ReXApp::OnFinalizePaths(defaults, std::move(resume));
   }
   void OnPostSetup() override {
+    // The PGO-instrumented build (NARUTO_PGO=generate) saves its counts to pgo/ every 2 minutes (nothing otherwise).
+    naruto::pgo::Start();
     if (banjo::renut_gpu::Active()) {
       sa2::capture::StartWithSource([](rex::ui::RawImage& image) { return renut::gpu::CaptureFrame(image); });
       return;
@@ -102,9 +105,14 @@ class NarutoApp : public rex::ReXApp {
       return graphics ? graphics->presenter() : nullptr;
     });
   }
+  // The PGO-instrumented build saves its counts when the game loses focus (HOME menu): it may be closed from there.
+  void OnWindowFocusChanged(bool focused) override {
+    if (!focused) naruto::pgo::DumpNow();
+  }
   void OnShutdown() override {
     if (banjo::renut_gpu::Active()) renut::gpu::ShutdownRenderer();
     sa2::capture::Stop();
+    naruto::pgo::Stop();
   }
 #endif
 

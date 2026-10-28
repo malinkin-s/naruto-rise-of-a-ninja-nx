@@ -38,6 +38,8 @@ set(NARUTO_SOURCES
 if(REXGLUE_PLATFORM_SWITCH)
     list(APPEND NARUTO_SOURCES src/naruto_static_modules.cpp src/naruto_no_gpu_plugin.cpp)
 endif()
+# PGO profile collection (NARUTO_PGO=generate on the Switch; empty otherwise). src/naruto_pgo.cpp from sa2-nx's sa2_pgo.cpp.
+list(APPEND NARUTO_SOURCES src/naruto_pgo.cpp)
 
 if(WIN32)
     add_executable(naruto WIN32 ${NARUTO_SOURCES})
@@ -154,6 +156,49 @@ if(REXGLUE_PLATFORM_SWITCH)
         endforeach()
         target_link_options(naruto PRIVATE ${_naruto_lto_link})
         message(STATUS "naruto: Switch LTO on (${NARUTO_SWITCH_LTO_JOBS} LTRANS jobs, -fipa-pta ${NARUTO_SWITCH_IPA_PTA})")
+    endif()
+
+    # Profile-guided optimisation (sa2-nx app/CMakeLists.txt, docs/porting-guide.md 9.2; the other ports' only measured
+    # across-the-board CPU gain: sa2-nx about 15 %). Three steps:
+    #   NARUTO_PGO=generate  an instrumented NRO that streams its branch counts to pgo/ next to the NRO (src/naruto_pgo.cpp;
+    #                        every 2 minutes, at HOME and at exit). Build it in a tree of its own (out/nx-pgo).
+    #   tools/pgo_merge.sh   adds the sessions' streams into .gcda files (gcov-tool merge-stream), tools/pgo_summary.py
+    #                        fills in their summary.
+    #   NARUTO_PGO=use       the counts read from NARUTO_PGO_DIR (pgo/ at the root, not committed: it comes from running the
+    #                        game). Code the sessions did not run is compiled as without a profile
+    #                        (-fprofile-partial-training); functions changed since the instrumented build keep no profile.
+    # The .gcda files are named by the object's path in the build folder (-fprofile-prefix-path), so the profile is
+    # found from any build tree with the same layout. Change no source and no generated code between the two builds.
+    set(NARUTO_PGO "" CACHE STRING "Profile-guided optimisation of the Switch build: empty, generate or use")
+    set_property(CACHE NARUTO_PGO PROPERTY STRINGS "" generate use)
+    set(NARUTO_PGO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pgo" CACHE PATH "Folder of the PGO profile (.gcda files)")
+    get_filename_component(_naruto_pgo_dir "${NARUTO_PGO_DIR}" ABSOLUTE)
+    if(NARUTO_PGO STREQUAL "generate")
+        set(_naruto_pgo "-fprofile-generate=${_naruto_pgo_dir}" "-fprofile-prefix-path=${CMAKE_BINARY_DIR}"
+                        -fno-profile-values -fprofile-update=single -fprofile-info-section=gcov_info)
+        target_compile_definitions(naruto PRIVATE NARUTO_PGO_GENERATE=1)
+    elseif(NARUTO_PGO STREQUAL "use")
+        if(NOT EXISTS "${NARUTO_PGO_DIR}")
+            message(FATAL_ERROR "NARUTO_PGO=use: no profile in ${NARUTO_PGO_DIR}")
+        endif()
+        # -fprofile-correction: the counts were taken without atomic updates while several game threads ran the same
+        # code, so a few increments were lost and some blocks' counts do not add up; GCC smooths them.
+        set(_naruto_pgo "-fprofile-use=${_naruto_pgo_dir}" "-fprofile-prefix-path=${CMAKE_BINARY_DIR}"
+                        -fprofile-correction -fno-profile-values -fprofile-partial-training
+                        -Wno-missing-profile -Wno-coverage-mismatch)
+    elseif(NARUTO_PGO)
+        message(FATAL_ERROR "NARUTO_PGO must be empty, generate or use (got ${NARUTO_PGO})")
+    endif()
+    if(NARUTO_PGO)
+        # The recompiled game (default.xex, AI2C), the app, Renut's renderer and plume's deko3d back end: with Renut they
+        # are the game thread's and the render thread's code. The SDK libraries are built apart and stay out.
+        foreach(target naruto_recomp naruto_AI2C naruto naruto_renut_gpu plume)
+            if(TARGET ${target})
+                target_compile_options(${target} PRIVATE ${_naruto_pgo})
+            endif()
+        endforeach()
+        target_link_options(naruto PRIVATE ${_naruto_pgo})
+        message(STATUS "naruto: PGO ${NARUTO_PGO} (${_naruto_pgo_dir})")
     endif()
 
     rexglue_switch_add_nro(naruto

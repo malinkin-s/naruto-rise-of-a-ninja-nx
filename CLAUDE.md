@@ -47,6 +47,13 @@ NX_BUILD_DIR=$PWD/out/nx-release tools/switch/build.sh            # release NRO 
 tools/switch/package.sh [-nogame]      # out/nx/sdcard/ for the SD card
 ```
 
+**PGO** (profile-guided optimisation, from sa2-nx; about -12 % of the render thread's CPU, +1.5-2 FPS at Konoha's worst spot):
+`NX_BUILD_DIR=$PWD/out/nx-pgo tools/switch/build.sh -reconfigure -DNARUTO_PGO=generate -DSA2_RENUT_RELEASE_SHADERS=ON` makes an
+instrumented NRO (copy `renut_gpu/host_shaders` from `out/nx-release/` into the new tree first); play it, fetch
+`/switch/naruto-nx/pgo/*.stream` over FTP, `tools/pgo_merge.sh <folder>` writes `pgo/*.gcda`, then a build with
+`-DNARUTO_PGO=use` (own tree, e.g. `out/nx-pgo-use`) uses them. `pgo/` is committed (counters only). Change no source and no
+generated code between the instrumented build and the use build.
+
 `tools/codegen.sh` variants: `NARUTO_CLASSIC=1` (generator output only), `NARUTO_VOLATILE=1` (direct calls only),
 `NARUTO_NO_CARDS=1` (skip store cards). **Any manual `rexglue codegen` must be followed by `tools/post_codegen.sh`**,
 because the generator rewrites the files without the post-processing.
