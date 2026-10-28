@@ -10,8 +10,8 @@ Namco, Microsoft or Nintendo. **The game's files are not included: you need your
   at the heaviest spot of the village. Started from hbmenu it runs on three cores, as in 0.1.1.
 - **Open-world performance work** (the game's draw queue without allocations, cheaper constants and binds, fewer
   empty draws, codegen: more registers as locals, native memcpy/memset/memmove, atomics without barriers). With the console
-  overclocked (CPU 1785 / GPU 768 MHz) Konoha runs 27–30 FPS, its heaviest spot 27–28 FPS. The 0.1.1 stock-clock figures
-  (about 20 FPS in Konoha, 32–47 FPS in fights) were not measured again for this version.
+  overclocked (CPU 1785 / GPU 768 MHz) Konoha runs 27–30 FPS, its heaviest spot 27–28 FPS, and **fights run at 60 FPS**. The
+  0.1.1 stock-clock figures (about 20 FPS in Konoha, 32–47 FPS in fights) were not measured again for this version.
 - **Audio streaming** reads from a RAM cache (up to 1 GB, `sa2_io_ranges_mb`), a deeper output queue (14 frames).
 - **The game's own anti-aliasing (4× MSAA) is off by default** (GPU −10–15 %, fewer dips). Set `naruto_guest_msaa_max = 0` in
   `naruto.toml` to turn it back on.
@@ -52,8 +52,8 @@ Nintendo. **Файлов игры в сборке нет: нужна своя к
   тяжёлом месте деревни. Из hbmenu порт работает на трёх ядрах, как 0.1.1.
 - **Работа над производительностью открытого мира** (очередь draw'ов без аллокаций, дешевле константы и биндинги, меньше
   пустых draw'ов, кодогенерация: больше регистров в локальных переменных, нативные memcpy/memset/memmove, атомики без
-  барьеров). На разогнанной консоли (CPU 1785 / GPU 768 МГц) Коноха идёт на 27–30 FPS, самое тяжёлое место — 27–28 FPS. Цифры
-  0.1.1 на стандартных частотах (около 20 FPS в Конохе, 32–47 FPS в боях) для этой версии заново не измерялись.
+  барьеров). На разогнанной консоли (CPU 1785 / GPU 768 МГц) Коноха идёт на 27–30 FPS, самое тяжёлое место — 27–28 FPS, а **бои — на 60 FPS**.
+  Цифры 0.1.1 на стандартных частотах (около 20 FPS в Конохе, 32–47 FPS в боях) для этой версии заново не измерялись.
 - **Стриминг звука** читается из кэша в RAM (до 1 ГБ, `sa2_io_ranges_mb`), очередь вывода глубже (14 кадров).
 - **Сглаживание самой игры (4× MSAA) по умолчанию выключено** (GPU −10–15%, меньше просадок). Чтобы вернуть, поставьте
   `naruto_guest_msaa_max = 0` в `naruto.toml`.

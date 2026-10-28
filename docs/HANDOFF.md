@@ -17,7 +17,8 @@ measure it.
   - stock clocks (CPU 1020 / GPU 460.8 MHz), 0.1.1 figures, not repeated: fights 32–47 FPS at 720p, 46–58 at 480p;
     Konoha about 20 FPS at its worst spot.
   - **the console overclocked by hand (CPU 1785 / GPU 768 MHz), which is what the 30-FPS work is measured at**: the worst
-    spot of Konoha runs 26–28 FPS (three cores) and +0.5–1.2 FPS with four cores; lighter parts of the village 29–30.
+    spot of Konoha runs 26–28 FPS (three cores) and +0.5–1.2 FPS with four cores; lighter parts of the village 29–30; fights
+    run at 60 FPS (the user's observation, not logged in a run).
     Steps 1–10 of `docs/konoha-optimization-log.md` left the frame rate at those clocks where it was (26.2–27.5 FPS, noise);
     the 20 → 27 FPS was the CPU overclock. Check the `clocks:` line of `rex_profile.log` before comparing runs.
   - the limit at the worst spot: three heavy threads at 80–95 % of a core each (the game's main thread, its drawing

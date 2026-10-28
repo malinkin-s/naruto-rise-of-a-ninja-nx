@@ -18,12 +18,12 @@ DARK = "#14171A"  # value text on a coloured field
 # language suffix: rows of (label, value, colour)
 ROWS = {
     "": [
-        [("status", "0.1.2 · test build · story 20-30 FPS, fights 32-47 FPS", SIGNAL)],
+        [("status", "0.1.2 · test build · story 20-30 FPS, fights 32-60 FPS", SIGNAL)],
         [("platform", "Nintendo Switch (homebrew)", SLATE), ("renderer", "Renut · deko3d", SLATE),
          ("license", "GPL-3.0", OCHRE)],
     ],
     "_ru": [
-        [("состояние", "0.1.2 · тестовая сборка · сюжет 20–30 FPS, бои 32–47 FPS", SIGNAL)],
+        [("состояние", "0.1.2 · тестовая сборка · сюжет 20–30 FPS, бои 32–60 FPS", SIGNAL)],
         [("платформа", "Nintendo Switch (homebrew)", SLATE), ("рендерер", "Renut · deko3d", SLATE),
          ("лицензия", "GPL-3.0", OCHRE)],
     ],

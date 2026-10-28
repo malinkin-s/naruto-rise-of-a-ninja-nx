@@ -28,7 +28,7 @@ GPU 460 MHz; the 0.1.1 measurements, not repeated for 0.1.2) and the console ove
 |---|---|---|
 | Boot, logos, menus | **Works** | 24–29 FPS in menus |
 | Story mode (Konoha, the open world) | **Works** | stock clocks: about 20 FPS (the game's logic runs at 30). CPU 1785 / GPU 768 MHz: 27–30 FPS, the heaviest spot of the village 27–28 FPS; ground shadows fixed |
-| Fights | **Works** | 32–47 FPS at 1280×720, 46–58 FPS at 854×480 (fights run at 60) |
+| Fights | **Works** | stock clocks: 32–47 FPS at 1280×720, 46–58 FPS at 854×480. CPU 1785 / GPU 768 MHz: 60 FPS (the game's own rate in fights) |
 | Saves on the SD card | **Works** | Created, listed and loaded |
 | Bink video (cutscenes) | **Works** | The intro and the first story scenes; not checked through the whole game |
 | Controller | **Works** | Played by hand in the story mode |
