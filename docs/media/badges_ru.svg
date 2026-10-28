@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="845" height="74" viewBox="0 0 845 74" role="img" aria-label="состояние: 0.1.1 · тестовая сборка · сюжет 20–30 FPS, бои 32–47 FPS · платформа: Nintendo Switch (homebrew) · рендерер: Renut · deko3d · лицензия: GPL-3.0">
-  <title>состояние: 0.1.1 · тестовая сборка · сюжет 20–30 FPS, бои 32–47 FPS · платформа: Nintendo Switch (homebrew) · рендерер: Renut · deko3d · лицензия: GPL-3.0</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="845" height="74" viewBox="0 0 845 74" role="img" aria-label="состояние: 0.1.2 · тестовая сборка · сюжет 20–30 FPS, бои 32–47 FPS · платформа: Nintendo Switch (homebrew) · рендерер: Renut · deko3d · лицензия: GPL-3.0">
+  <title>состояние: 0.1.2 · тестовая сборка · сюжет 20–30 FPS, бои 32–47 FPS · платформа: Nintendo Switch (homebrew) · рендерер: Renut · deko3d · лицензия: GPL-3.0</title>
   <g font-family="'IBM Plex Sans','Segoe UI',Helvetica,Arial,sans-serif" font-size="16">
   <rect x="0.0" y="0" width="109" height="32" fill="#1C2024"/>
   <rect x="109.0" y="0" width="736.0" height="32" fill="#5CA382"/>
   <text x="14.0" y="21.6" fill="#E6E1D3" textLength="81" lengthAdjust="spacingAndGlyphs">состояние</text>
-  <text x="477.0" y="21.6" fill="#14171A" font-weight="700" text-anchor="middle" textLength="450" lengthAdjust="spacingAndGlyphs">0.1.1 · тестовая сборка · сюжет 20–30 FPS, бои 32–47 FPS</text>
+  <text x="477.0" y="21.6" fill="#14171A" font-weight="700" text-anchor="middle" textLength="450" lengthAdjust="spacingAndGlyphs">0.1.2 · тестовая сборка · сюжет 20–30 FPS, бои 32–47 FPS</text>
   <rect x="0.0" y="42" width="117" height="32" fill="#1C2024"/>
   <rect x="117.0" y="42" width="262.0" height="32" fill="#7FA0B4"/>
   <text x="14.0" y="63.6" fill="#E6E1D3" textLength="89" lengthAdjust="spacingAndGlyphs">платформа</text>

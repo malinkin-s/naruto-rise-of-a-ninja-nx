@@ -1,30 +1,31 @@
-# naruto-nx: handoff (2026-10-25)
+# naruto-nx: handoff (2026-10-28)
 
-Hand-off of the Naruto: Rise of a Ninja (Xbox 360) → Nintendo Switch port, written by Claude for the next agent
-(Gemini). Read this first, then `docs/port-journal.md` (every step with its evidence and measurements) and
+Hand-off of the Naruto: Rise of a Ninja (Xbox 360) → Nintendo Switch port, written for the next agent. Read this first, then `docs/port-journal.md` (every step with its evidence and measurements) and
 `README.md`. Talk to the user in **Russian**; work in **small steps**, say before each step what you expect and how to
 measure it.
 
 ## 1. Where the project is
 
-- **Released**: 0.1.1 (pre-release) — https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.1.
-  The release holds only `naruto.nro` (no game data). Players make the game's shaders with the **installer page**
-  https://malinkin-s.github.io/naruto-nx-installer/ (repo `malinkin-s/naruto-nx-installer`, local
-  `~/Projects/naruto-nx-installer`): two files of their disc (`default.xex`, `xeshader.sdb`) in, a zip out
-  (`naruto.nro`, `deko3d_glsl.bin`, `deko3d_shaders.bin` = shaders compiled for the console in advance).
-- **Works on the console**: boot, menus, saves, cutscenes, story mode (Konoha, open world), fights, controller,
-  sound. Konoha ground shadows fixed (Renut ignored the game's depth bias).
-- **Performance, stock handheld clocks (CPU 1020 MHz, GPU 460.8 MHz)**:
-  - fights: 32–47 FPS at 720p, 46–58 FPS at 480p (the game runs fights at 60);
-  - Konoha: 20–30 FPS; **the worst spot (run `cpu2`, 480p, camera on the heaviest view, static) = 20 FPS**:
-    render thread 93 % of core 1 (~47 ms busy a frame, ~3,780 draws a frame → ~12.4 µs a draw), a guest worker
-    thread `XThread...62C0` 85 %, the game's main thread 80 % of core 0 (~40 ms a frame), GPU ~33 ms a frame even at
-    480p. **All three cores are saturated: CPU-bound, the render thread first.**
-  - With the CPU overclocked to 1785 MHz the open world is nearly a stable 30 (the user tested by hand).
-  - Sound stutters when FPS drops well below 30 (the game's audio is fed by guest threads that starve).
-- **Last commits**: `e520a82` (CPU step 2, generator options), `daec5a5` (CPU step 1, -fno-math-errno). Both are
-  built in the `cpu2` run's NRO. Compare `out/runs/cpu2` with `out/runs/rel3` (before steps 1-2; same release build
-  otherwise) — but the routes differ; for a fair A/B use the same spot and view.
+- **Released**: 0.1.2 (pre-release, 2026-10-28) — https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.2
+  (0.1.1 before it). The release holds only `naruto.nro` (no game data). Players make the game's shaders with the
+  **installer page** https://malinkin-s.github.io/naruto-nx-installer/ (repo `malinkin-s/naruto-nx-installer`, local
+  `~/Projects/naruto-nx-installer`): two files of their disc (`default.xex`, `xeshader.sdb`) in, a zip out (`naruto.nro`,
+  `deko3d_glsl.bin`, `deko3d_shaders.bin`). 0.1.2 did not change the shader package or the DKSH cache (same
+  `package_sha256` / `cache_sha256` as 0.1.1); only the manifest's `version`, `nro_sha256`, `nro_size` changed.
+- **Works on the console**: boot, menus, saves, cutscenes, story mode (Konoha), fights, controller, sound.
+- **Performance**:
+  - stock clocks (CPU 1020 / GPU 460.8 MHz), 0.1.1 figures, not repeated: fights 32–47 FPS at 720p, 46–58 at 480p;
+    Konoha about 20 FPS at its worst spot.
+  - **the console overclocked by hand (CPU 1785 / GPU 768 MHz), which is what the 30-FPS work is measured at**: the worst
+    spot of Konoha runs 26–28 FPS (three cores) and +0.5–1.2 FPS with four cores; lighter parts of the village 29–30.
+    Steps 1–10 of `docs/konoha-optimization-log.md` left the frame rate at those clocks where it was (26.2–27.5 FPS, noise);
+    the 20 → 27 FPS was the CPU overclock. Check the `clocks:` line of `rex_profile.log` before comparing runs.
+  - the limit at the worst spot: three heavy threads at 80–95 % of a core each (the game's main thread, its drawing
+    thread `T_820F02C0`, Renut's render thread at 94 %); the render thread (≈34 ms a frame, a flat profile) has no slack.
+- **Four cores** (new in 0.1.2): a HOME Menu forwarder started with 4 cores (Sphaira: CPU cores 4, address space 39-bit)
+  gives the process mask 0xF; the SDK (`RexSwitchProcessCoreMask`, `sdk/src/system/xthread.cpp`) then puts audio, XMA and
+  the guest pool on core 3. No audio lag, smoother play. From hbmenu the port runs on three cores as before.
+- **Experimental, off by default, never run on the console**: `naruto_deko3d_record_worker` (stage A, see below).
 
 ## 2. The user's rules (keep them)
 
@@ -91,27 +92,27 @@ the same moments).
 
 ## 5. Next steps (in this order)
 
-1. **Measure CPU steps 1-2** fairly: same spot/view as `cpu2` with the pre-step build, or keep `cpu2` as the new
-   baseline for the worst spot (20 FPS, render thread 47 ms, main 40 ms, worker 85 %).
-2. **Render thread (the first limit at the worst spot)**: ~12.4 µs a draw × ~3,780 draws. Gemini's own plan
-   `out/gemini/plans/renut_render_thread_plan.md` and `out/gemini/openworld_cpu.md` §3: SharedConstants dedupe
-   (0 reused now), redundant `Deko3DBindUniform` per draw, `banjo_gpu_bool_spec` off (no Naruto shader uses bool
-   spec), dead device-snapshot chunks 11816..12428 in `backend/queued.cpp`. Measure with the `[renut]` lines.
-3. **Codegen step 3b: `non_argument_as_local`** (r0/r2/r11/r12/f0/v32-63 as locals; sa2-nx: −5.6 % instructions,
-   −8.8 % loads/stores). Needs sa2-nx's `tools/non_argument_audit.py` ported and a `non_argument_as_local_keep` list
-   (stack probe, SEH funclets, r12 users). Test on the PC replay first (setjmp 0x822CC540 / longjmp 0x822CC220).
-4. Other sa2-nx post-codegen steps (`~/Projects/cloned/sa2-nx/tools/post_codegen.py`): indirect call promotion,
-   ro_constants, leaf/loop locals, guest CAS, flush-mode flow, vector byteswap, NEON shuffles, cold traps.
-5. LTO (`NARUTO_SWITCH_LTO`, gave 2 % before step 3) and PGO later.
-6. **Sound**: decouple the game's audio feed from the frame rate if possible (look at the XMA/audio threads and
-   `SwitchAudioSystem` in `sdk/src/audio/switch/`), so music does not stutter during dips.
-7. Not performance: the **save thumbnail** (black on Load Game): port the PC base's `WriteBackResolve`
-   (`~/Projects/cloned/naruto-rise-recomp/app/src/gpu/d3d/resources.cpp`, the lock of a resolve destination at
-   `sub_8212C7E8` reads the resolve back) onto Renut (template: `gpu/guest/photo_capture.cpp`,
-   `ReadRenderTargetLocked`); the race guard is already in `app/src/naruto_save_thumbnail.cpp`. **Controls**: expose
-   the SDK's input options in `naruto.toml`, the user chose **buttons by letter** (A = A) as the default; single
-   Joy-Con jutsu assist (`out/gemini/plans/switch_controls_adaptation_plan.md`). The "Saved Game Warning" scroll border
-   differs from the Xbox 360 (not investigated).
+1. **Run stage A on the console** (written, built, not run): `naruto.toml`: `naruto_deko3d_record_worker = true`; for an
+   in-session comparison also `banjo_renut_ab_target = 14` and `banjo_renut_ab_s = 15` (the `[renut A/B]` line gives both
+   halves' FPS, render thread and GPU time). Look at the `[renut] record worker` line (lists through it, worker busy
+   time, drains) and for glitches (wrong textures, missing draws: the worker keeps its own copy of the shared constants,
+   `Deko3DSetSharedWords`; descriptor sets are bound by pointer). Expected: render thread ≈34 → ≈31 ms. Needs the 4-core
+   forwarder (the worker goes to core 3); logs of forwarder runs: `python3 tools/switch/ftp_logs.py NAME` (console FTP on).
+2. **Stage B** if A is not enough: Renut's per-draw preparation (`DrawStateLocked`, geometry, streams, constants, textures:
+   ≈50–60 % of the render thread) ahead of the render thread on core 3, command recording on core 1.
+3. **PGO / clang for the game code** (sa2-nx PGO ≈ 15 %, mgr clang ≈ 8 %, `x360-switch-ports` SOL-CPU-1/-2/-5): the only
+   measured across-the-board CPU gain in the other ports; not tried here.
+4. Hot guest functions of `T_820F02C0` as guarded natives (`sub_82105648`, `sub_820FD5F8`, `sub_82137E00` are ≈78 % of its
+   guest samples; SOL-CPU-3).
+5. Reducing the scene (draw distance / LOD) only as a player option: at this spot cutting draws late in the render thread
+   did not help (`skip1`), small draws are mixed with the HUD, and the other ports' gains came from the game's own LOD.
+6. **Sound**: with four cores there is no audio lag; on three cores it still stutters when FPS dips.
+7. Not performance: the **save thumbnail** (black on Load Game), **controls** (letter-position default, Joy-Con assist), the
+   "Saved Game Warning" scroll border. See the previous version of this section in git history for the details.
+
+How to measure: stand at the worst spot for a minute or more; compare inside one session (A/B), not between runs;
+`NX_PROFILE=1 NX_PROFILE_THREADS="renut render,Main,T_820F02C0"` and `tools/switch_profile_report.py`; per-line attribution
+with `llvm-addr2line` on the run's `naruto.elf`; `--naruto_debug_census=true` logs the draw census every 10 s.
 
 ## 6. Releasing a new version
 
@@ -122,8 +123,12 @@ the same moments).
 3. Installer manifest: `node test/naruto_manifest.mjs <game> out/nx-release/naruto.nro <version> out/deko3d_shaders/glsl_opt`
    in `~/Projects/naruto-nx-installer`; `node test/worker_node.mjs <default.xex> <xeshader.sdb>` runs the page's
    worker end to end.
-4. GitHub release with `naruto.nro` + `SHA256SUMS.txt` (notes in English and Russian), then push the installer (its
-   Pages workflow takes the NRO from the newest release, pre-releases included). README in both languages
+4. GitHub release with `naruto.nro` + `SHA256SUMS.txt` (notes in English and Russian), **then** push the installer (its
+   Pages workflow takes the NRO from the newest release, pre-releases included, and fails with "not a build of the
+   manifest" when the NRO's SHA-256 is not in `release/manifest.json`: the manifest must be made from the very NRO that is
+   published, and the NRO must not be rebuilt after it). For 0.1.2 only `version`, `nro_sha256` and `nro_size` changed.
+   `node test/worker_node.mjs <default.xex> <xeshader.sdb>` (with the NRO copied to the installer's `release/`) runs the
+   page's worker end to end. README in both languages
    (`tools/readme_badges.py` for the status badge).
 
 ## 7. Where things are

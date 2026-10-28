@@ -15,30 +15,45 @@ The game's PowerPC code is statically recompiled with [ReXGlue](https://github.c
 emulated: Direct3D calls are drawn by Renut, a Direct3D-level renderer, on deko3d, the Switch's native graphics API.
 
 > [!IMPORTANT]
-> **[Version 0.1.1](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.1) is the first test
+> **[Version 0.1.2](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.2) is a test
 > build.** The story mode and fights play on a real console, but expect bugs and crashes. The game's files are not
-> included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.1)).
+> included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.2)).
 
 ## Status
 
-**Version 0.1.0, 2026-10-25.** Measured on a Nintendo Switch at stock clocks (handheld, CPU 1020 MHz, GPU 460 MHz).
+**Version 0.1.2, 2026-10-28.** Measured on a Nintendo Switch. Two sets of figures: stock clocks (handheld, CPU 1020 MHz,
+GPU 460 MHz; the 0.1.1 measurements, not repeated for 0.1.2) and the console overclocked by hand (CPU 1785 MHz, GPU 768 MHz).
 
 | Area | Switch | Notes |
 |---|---|---|
 | Boot, logos, menus | **Works** | 24–29 FPS in menus |
-| Story mode (Konoha, the open world) | **Works** | about 20 FPS (the game's logic runs at 30); ground shadows fixed |
+| Story mode (Konoha, the open world) | **Works** | stock clocks: about 20 FPS (the game's logic runs at 30). CPU 1785 / GPU 768 MHz: 27–30 FPS, the heaviest spot of the village 27–28 FPS; ground shadows fixed |
 | Fights | **Works** | 32–47 FPS at 1280×720, 46–58 FPS at 854×480 (fights run at 60) |
 | Saves on the SD card | **Works** | Created, listed and loaded |
 | Bink video (cutscenes) | **Works** | The intro and the first story scenes; not checked through the whole game |
 | Controller | **Works** | Played by hand in the story mode |
 | Settings (`naruto.toml`) | **Works** | Render resolution handheld / docked, the game's anti-aliasing |
-| Audio | Plays | Not checked in depth |
+| Audio | Plays | With the fourth CPU core (below) no audio lag in Konoha; on three cores it stutters when the frame rate drops |
+| Fourth CPU core | **Works** | Needs a HOME Menu forwarder started with 4 cores; +0.5–1.2 FPS in the heavy spot, smoother play, clean sound |
 | Character DLC (3 extra engines) | Not yet | |
 | Known issues | | Possible crashes when quitting; the "Saved Game Warning" scroll border differs from the Xbox 360 |
 
 Performance so far: sa2-nx's enhancements, an optimised code generator (registers as locals, direct calls, guest
-memory without volatile, float-mode switches skipped), store cards for Renut's caches. Next: the GPU (fights are
-GPU-bound at 720p) and the CPU work of the open world.
+memory without volatile, float-mode switches skipped), store cards for Renut's caches, a batched draw queue without
+allocations, and (new in 0.1.2) the use of a **fourth CPU core** when the game is started with four. In the open world
+all three heavy threads (the game's main thread, its drawing thread and Renut's render thread) sit at 80–95 % of a core;
+the render thread (about 34 ms a frame at the heaviest spot) is the limit. Next: moving part of its work to the free
+core (an experimental option is in 0.1.2, off by default: `naruto_deko3d_record_worker`).
+
+#### Four CPU cores (optional)
+
+A Switch game normally runs on three of the four cores; the fourth is shared with the system. With four cores the
+audio mixer, the XMA decoder and the game's thread pool move to it and stop competing with the game's heavy threads.
+The core count is chosen by the launcher, so this needs a HOME Menu forwarder: install [Sphaira](https://github.com/ITotalJustice/sphaira),
+select `naruto.nro`, install a forwarder with **CPU cores = 4** and **address space = 39-bit**, and start the game from
+the new HOME Menu icon. Check `process cores 4 (mask 0xF)` in `logs/rex/rex_profile.log`. Started from hbmenu the port
+works as before, on three cores. The fourth core is shared with the HOME Menu, overlays and background services:
+please report anything odd in long sessions.
 
 ### What was solved to get here
 
@@ -121,7 +136,7 @@ Taken from the renderer on a Nintendo Switch (half size, 640×360), version 0.1.
 
 ### Installing
 
-Through the installer page, which makes the game's shaders from your own disc: **https://malinkin-s.github.io/naruto-nx-installer/**. The steps are on [the 0.1.1 release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.1).
+Through the installer page, which makes the game's shaders from your own disc: **https://malinkin-s.github.io/naruto-nx-installer/**. The steps are on [the 0.1.2 release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.2).
 
 ### Building (outline)
 

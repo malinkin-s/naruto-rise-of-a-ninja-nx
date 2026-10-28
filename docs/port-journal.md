@@ -429,3 +429,40 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 | 2026-10-25 | cards2: step 3 + store cards | 1020 / 460.8 / 1600 | fight vs Sasuke | 32-47 FPS | ~15 ms CPU a frame | 7-14 ms | 21-31 ms |
 | 2026-10-25 | res480: cards2 + 853x480 render | 1020 / 460.8 / 1600 | fight vs Sasuke | 46-58 FPS | | | 8-16 ms |
 | 2026-10-25 | opt8: + step 3 (non_volatile_as_local, elide_lr_stores) | 1785 / 768 / 1600 (overclocked by hand) | fight vs Sasuke | 46-54 FPS | ~11 ms CPU a frame | 8-13 ms | 17-22 ms |
+| 2026-10-27 | oc_step10 (Konoha worst spot, 3 cores) | 1785 / 768 / 1600 (overclocked by hand) | Konoha, ≈4050 draws a frame | 26.6 FPS (25.5-27.5) | Swap to Swap 36.3 ms, 81 % of frames late | 34.4 ms (87 % of core 1) | 28.6 ms |
+| 2026-10-28 | prof_r1 (stack samples of 3 threads) | 1785 / 768 / 1600 | Konoha, ≈3700 draws a frame | 28-30 FPS | T_820F02C0 82 %, Main 82 % | 95 % of core 1 (sampling adds ≈4 %) | |
+| 2026-10-28 | four1 (HOME forwarder, 4 cores, SDK layout of 0.1.2) | 1785 / 768 / 1600 | Konoha, run around the village | 27.8-29.5 FPS at 3800-3900 draws (3 cores: 26.8-27.2); 29-30 below 3400 draws | Swap to Swap 33.0-34.4 ms | 34.0 ms (94 % of core 1) | 27.7-28.2 ms |
+
+## Konoha 30 FPS hunt, 2026-10-27/28 (details: docs/konoha-optimization-log.md, stage 11)
+
+Known (with evidence):
+- **The overclock, not the steps, moved the frame rate.** From `oc_cpu1785_gpu768` (27.2 FPS) to `oc_step10` (26.6 FPS) steps
+  1-10 changed nothing beyond noise; CPU 1020 → 1785 MHz gave 20 → 27 FPS; GPU 460 → 768 MHz gave 0.3 FPS. The GPU (≈29 ms)
+  is not the limit. Runs at different spots differ more than any step does (`cpu3` 22.4 vs `cpu5` 19.7 FPS at stock).
+- **Thread roles.** `T_820F02C0` is the game's drawing thread (D3D library code 0x820F-0x8213 plus Renut's `CaptureDelta`), not
+  the simulation. Main, `T_820F02C0` and the render thread each use 80-95 % of a core; with the background threads
+  (audio mixer ≈13 %, `T_8214FA70` ≈11 %, XMA ≈10 %, pool ≈5 %) the process uses ≈300 % of 300 %.
+- **The render thread's profile is flat** (prof_r1, per line with llvm-addr2line): `DrawStateLocked` 15 %, hand-over of
+  the batch from core 2 (queued.cpp:403/495, cache misses) 8 %, `PrepareGeometry` 7 %, `BindStreams` 7 %, float and shared
+  constants 10 %, textures 8 %, `PagesClean` 4 %, `setPipeline` 4 %. Its device-snapshot delta size (587 bytes a draw)
+  equals sa2-nx's (590): the known render-thread work is already in.
+- **Draw census** (`census1`): ≈4150 draws a frame, 357 coloured draws with ≤24 indices (8.6 %), 527 with ≤48 (12.7 %);
+  small draws are shared with the HUD (shaders `3DC306CC/BCD60BEC`, `AC8DA5D8/1EEB9950`).
+- **Dead end: dropping draws late in the render thread** (`skip1`, 153 draws of 4061): render thread 34.44 → 35.11 ms.
+  The scene-to-scene correlation of draws and render time (0.98-1.0, 7.5-8 µs a draw) is a property of scenes, not a price
+  per draw. Hook of `sub_821000C0` (far plane): r28 = 0 in Konoha, no effect. Pinning `T_820F02C0` to core 0: -2.3 FPS.
+- **Hitches.** In the 60 Hz display a 36 ms average means every third frame lasts 3 refreshes (50 ms): that is the visible
+  stutter; real peaks ≥ 55 ms are ≈17 in 270 s.
+- **Sound during play.** No slow SD reads and no XMA silences after the loading; the lag heard on three cores went away
+  with the fourth core (background threads no longer compete with the heavy ones).
+
+Decisions:
+| Date | Decision | Alternatives considered | Why |
+|---|---|---|---|
+| 2026-10-28 | Use the fourth core when the process has it (SDK reads the core mask; audio, XMA and the guest pool prefer core 3; main thread cores 0 and 3, drawing thread 2, render thread 1). Three-core behaviour unchanged. | A custom loader descriptor in the NRO; staying on three cores (mass-effect-nx declined it as a system change). | nfscarbon-nx measured lost audio blocks 59-179 → 0 on the same kind of load; here no audio lag, +0.5-1.2 FPS. Needs a forwarder; the user chose it. |
+| 2026-10-28 | Stage A: banjo's record worker for deko3d (`naruto_deko3d_record_worker`, default off). | Stage B (split of the draw preparation), PGO, scene reduction. | Safest use of the free core: moves plume's deko3d recording (≈9-10 % of the render thread) with the same commands in the same order. Not run on the console yet. |
+| 2026-10-28 | Do not cut draws (micro meshes, distance) as a CPU fix for now. | The other agent's step 11. | `skip1`; HUD shares the shaders; no per-draw price. |
+
+Open questions: does stage A reach ≈31 ms on the render thread (A/B target 14 inside one session)? Is the worker's copy of
+the shared constants always equal to the renderer's at each draw (no wrong textures)? PGO / clang for the game code?
+
