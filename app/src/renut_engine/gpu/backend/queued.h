@@ -28,6 +28,9 @@ void ForgetSnapshotDeltas();
 // The 10 s "[renut] device snapshots" line (empty with the deltas off); resets its counts.
 std::string SnapshotDeltaReport();
 
+// Flushes any batched draw captures to the render thread queue.
+void FlushDrawBatch();
+
 // 'up_vertex_bytes' / 'up_index_bytes': the sizes of call.up_vertices /
 // call.up_indices, copied now.
 void QueueDraw(u32 device_va, const DrawCall &call, u32 up_vertex_bytes, u32 up_index_bytes);

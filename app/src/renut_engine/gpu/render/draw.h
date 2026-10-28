@@ -110,7 +110,15 @@ constexpr u32 ChainChunkOf(u32 device_offset) {
 }
 // Whether any chunk of device bytes [first, last] changed (both outside the float constants, on the same side).
 inline bool ChainChanged(const ChainHint &h, u32 first, u32 last) {
-  for (u32 c = ChainChunkOf(first); c <= ChainChunkOf(last); ++c) {
+  const u32 c0 = ChainChunkOf(first);
+  const u32 c1 = ChainChunkOf(last);
+  const u32 w0 = c0 / 64;
+  const u32 w1 = c1 / 64;
+  if (w0 == w1) {
+    const uint64_t mask = (c1 - c0 + 1 == 64) ? ~0ULL : (((1ULL << (c1 - c0 + 1)) - 1ULL) << (c0 % 64));
+    return (h.changed[w0] & mask) != 0;
+  }
+  for (u32 c = c0; c <= c1; ++c) {
     if ((h.changed[c / 64] >> (c % 64)) & 1)
       return true;
   }

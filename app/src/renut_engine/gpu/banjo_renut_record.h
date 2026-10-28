@@ -9,7 +9,10 @@
 // banjo-nx's own renderer does the same (its deferred recording, -10-12 % a draw on the console in package 24b).
 #pragma once
 
+#include <cstdint>
+
 namespace plume {
+struct RenderBuffer;
 struct RenderCommandList;
 }
 
@@ -25,6 +28,19 @@ void Drain();
 bool SetBlendConstants(plume::RenderCommandList *cmd, const float rgba[4]);
 // True when 'cmd' is the proxy: banjo_renut_tuning's NVK prefetch hint is then given by the worker before it binds.
 bool IsProxy(const plume::RenderCommandList *cmd);
+
+// naruto-nx (2026-10-28): plume's deko3d extras take the list itself (plume_deko3d.h), so on the proxy they are commands
+// too: the same arguments as plume::Deko3D*, forwarded to plume when 'cmd' is a real list. The worker plays them on the
+// real list in order. Data the call points at is copied into the stream. Deko3DSetSharedWords is the one that keeps a
+// pointer: plume reads the renderer's copy of the shared constants at every draw, so the worker keeps a copy of its own
+// and applies every recorded push of the shared buffer to it, in stream order.
+bool Deko3DBindUniform(plume::RenderCommandList *cmd, uint32_t slot, uint64_t address, uint32_t size);
+bool Deko3DPushUniform(plume::RenderCommandList *cmd, uint64_t address, uint32_t ubo_size, uint32_t offset,
+                       const void *data, uint32_t size);
+bool Deko3DSetSharedWords(plume::RenderCommandList *cmd, const void *cpu, uint32_t size);
+bool Deko3DNotifyTexturesDirty(plume::RenderCommandList *cmd);
+bool Deko3DBindMemExport(plume::RenderCommandList *cmd, const plume::RenderBuffer *buffer);
+bool Deko3DBindFetchData(plume::RenderCommandList *cmd, uint64_t address, uint32_t size);
 void Shutdown();
 void Report(int seconds);  // the "[renut] record worker" line
 

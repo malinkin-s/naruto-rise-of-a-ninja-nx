@@ -1,0 +1,335 @@
+--- a/plume/plume_deko3d_commands.cpp
++++ b/plume/plume_deko3d_commands.cpp
+@@ -125,6 +125,9 @@
+         indexAddress = 0;
+         boundIndexFormat = DkIdxFormat_Uint16;
+         boundTexCount[0] = boundTexCount[1] = boundTexCount[2] = 0;
++        texturesDirty = true;
++        buffersDirty = true;
++        lastBufferPipeline = nullptr;
+         sharedBase = 0;
+         sharedSize = 0;
+         sharedCpu = nullptr;
+@@ -148,31 +151,31 @@
+         descriptorEpoch = currentEpoch();
+     }
+ 
+-    // Descriptors written and shader code loaded so far, as one number (flushDescriptorInvalidate).
+-    uint64_t Deko3DCommandList::currentEpoch() const {
+-        return device->descriptorEpoch.load(std::memory_order_acquire) ^ (device->codeEpoch.load(std::memory_order_acquire) << 40);
+-    }
+-
+     void Deko3DCommandList::end() {
+         flushBarriers();
+         list = dkCmdBufFinishList(cmd);
+         open = false;
+-        // banjo-nx (2026-10-19, render-thread proposal 13): this list's draws into the totals.
++        // banjo-nx (2026-10-19, render-thread proposal 13): this list's draws and binds into the totals.
+         Deko3DStats &st = GetDeko3DStats();
+         st.draws.store(st.draws.load(std::memory_order_relaxed) + statDraws, std::memory_order_relaxed);
+         st.windowDraws.store(st.windowDraws.load(std::memory_order_relaxed) + statWindowDraws, std::memory_order_relaxed);
++        st.pipelineBinds.store(st.pipelineBinds.load(std::memory_order_relaxed) + statPipelineBinds, std::memory_order_relaxed);
++        st.stateBinds.store(st.stateBinds.load(std::memory_order_relaxed) + statStateBinds, std::memory_order_relaxed);
++        st.barriersPrimitives.store(st.barriersPrimitives.load(std::memory_order_relaxed) + statBarriersPrimitives, std::memory_order_relaxed);
++        st.barriersFragments.store(st.barriersFragments.load(std::memory_order_relaxed) + statBarriersFragments, std::memory_order_relaxed);
++        st.barriersFull.store(st.barriersFull.load(std::memory_order_relaxed) + statBarriersFull, std::memory_order_relaxed);
++        st.barriersImageInvalidate.store(st.barriersImageInvalidate.load(std::memory_order_relaxed) + statBarriersImageInvalidate, std::memory_order_relaxed);
+         statDraws = statWindowDraws = 0;
++        statPipelineBinds = statStateBinds = 0;
++        statBarriersPrimitives = statBarriersFragments = statBarriersFull = statBarriersImageInvalidate = 0;
+     }
+ 
+-    void Deko3DCommandList::flushDescriptorInvalidate() {
+-        // Descriptors the CPU wrote since this list last invalidated, or shader code loaded since: the GPU's caches of
+-        // them are dropped before the next draw or dispatch.
+-        const uint64_t epoch = currentEpoch();
+-        if (epoch != descriptorEpoch) {
+-            flushBarriers();
+-            dkCmdBufBarrier(cmd, DkBarrier_None, DkInvalidateFlags_Descriptors | DkInvalidateFlags_Shader);
+-            descriptorEpoch = epoch;
+-        }
++    void Deko3DCommandList::flushDescriptorInvalidateSlow(uint64_t epoch) {
++        std::atomic_thread_fence(std::memory_order_acquire);
++        flushBarriers();
++        dkCmdBufBarrier(cmd, DkBarrier_None, DkInvalidateFlags_Descriptors | DkInvalidateFlags_Shader);
++        descriptorEpoch = epoch;
++        texturesDirty = true;
+     }
+ 
+     void Deko3DCommandList::barriers(RenderBarrierStages stages, const RenderBufferBarrier *bufferBarriers, uint32_t bufferBarriersCount, const RenderTextureBarrier *textureBarriers, uint32_t textureBarriersCount) {
+@@ -232,14 +235,14 @@
+     }
+ 
+     void Deko3DCommandList::emitBarrier(DkBarrier mode, uint32_t invalidate) {
+-        {
+-            // banjo-nx (2026-10-19): counted for the renderer's report (a load and a store: diagnostics).
+-            Deko3DStats &st = GetDeko3DStats();
+-            auto bump = [](std::atomic<uint64_t> &c) { c.store(c.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed); };
+-            bump(mode == DkBarrier_Full ? st.barriersFull : mode == DkBarrier_Fragments ? st.barriersFragments : st.barriersPrimitives);
+-            if (invalidate & DkInvalidateFlags_Image)
+-                bump(st.barriersImageInvalidate);
+-        }
++        if (mode == DkBarrier_Full)
++            ++statBarriersFull;
++        else if (mode == DkBarrier_Fragments)
++            ++statBarriersFragments;
++        else
++            ++statBarriersPrimitives;
++        if (invalidate & DkInvalidateFlags_Image)
++            ++statBarriersImageInvalidate;
+         dkCmdBufBarrier(cmd, mode, invalidate);
+         pendingBarrier = false;
+         pendingBarrierMode = DkBarrier_None;
+@@ -285,8 +288,10 @@
+ 
+     // The graphics stages' constant and storage buffers each shader reads, bound for the stages that read them when
+     // they changed.
+-    void Deko3DCommandList::bindGraphicsBuffers() {
++    void Deko3DCommandList::bindGraphicsBuffersSlow() {
+         const Deko3DGraphicsPipeline *p = graphicsPipeline;
++        lastBufferPipeline = p;
++        buffersDirty = false;
+         if ((p->ssboMask[0] | p->ssboMask[1] | p->ssboMask[2]) & (1u << AddressWindowSlot))
+             ++statWindowDraws;
+         for (int st = 0; st < 3; st++) {
+@@ -316,7 +321,8 @@
+     // where the CPU wrote them, bound when they differ from the last ones.
+     static constexpr uint32_t SharedUboSlot = 2;
+ 
+-    void Deko3DCommandList::bindTextures() {
++    void Deko3DCommandList::bindTexturesSlow() {
++        texturesDirty = false;
+         const Deko3DGraphicsPipeline *p = graphicsPipeline;
+         if (!(graphicsUboValid & (1u << SharedUboSlot)))
+             return;
+@@ -347,10 +353,10 @@
+             for (uint32_t k = 0; k < n; k++) {
+                 const Deko3DShaderUsage::TexBinding &b = bindings[k];
+                 uint32_t texture = 0, sampler = 0;
+-                if (b.textureWord + 4u <= limit)
+-                    memcpy(&texture, words + b.textureWord, 4);
+-                if (b.samplerWord != Deko3DShaderUsage::SamplerNone && b.samplerWord + 4u <= limit)
+-                    memcpy(&sampler, words + b.samplerWord, 4);
++                if (__builtin_expect(b.textureWord + 4u <= limit, 1))
++                    texture = *reinterpret_cast<const uint32_t *>(words + b.textureWord);
++                if (__builtin_expect(b.samplerWord != Deko3DShaderUsage::SamplerNone && b.samplerWord + 4u <= limit, 1))
++                    sampler = *reinterpret_cast<const uint32_t *>(words + b.samplerWord);
+                 handles[k] = (texture & 0xFFFFFu) | (sampler & 0xFFF00000u);
+                 same = same && handles[k] == boundTex[st][k];
+             }
+@@ -431,10 +437,7 @@
+         graphicsPipeline = p;
+         if (!p->valid)
+             return;
+-        // banjo-nx (2026-10-19): a load and a store (a lost count is possible between two recording threads), not
+-        // an exclusive read-modify-write loop: the A57 has no LSE atomics.
+-        auto bump = [](std::atomic<uint64_t> &c) { c.store(c.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed); };
+-        bump(GetDeko3DStats().pipelineBinds);
++        ++statPipelineBinds;
+         // Shaders: rebound when any stage differs (absent stages are disabled by the bind).
+         const DkShader *const *want = p->stageShaders;  // banjo-nx: kept at creation
+         if (want[0] != boundShaders[0] || want[1] != boundShaders[1] || want[2] != boundShaders[2]) {
+@@ -442,11 +445,38 @@
+             boundShaders[0] = want[0];
+             boundShaders[1] = want[1];
+             boundShaders[2] = want[2];
++            texturesDirty = true;
++            bool needRebind = false;
++            for (int st = 0; st < 3; ++st) {
++                const uint32_t stageBit = 1u << GraphicsStages[st];
++                uint32_t ubo = p->uboMask[st] & graphicsUboValid;
++                while (ubo) {
++                    const uint32_t s = uint32_t(__builtin_ctz(ubo));
++                    ubo &= ubo - 1;
++                    if (!(uboBoundStages[s] & stageBit)) {
++                        needRebind = true;
++                        break;
++                    }
++                }
++                if (needRebind) break;
++                uint32_t ssbo = p->ssboMask[st] & graphicsSsboValid;
++                while (ssbo) {
++                    const uint32_t s = uint32_t(__builtin_ctz(ssbo));
++                    ssbo &= ssbo - 1;
++                    if (!(ssboBoundStages[s] & stageBit)) {
++                        needRebind = true;
++                        break;
++                    }
++                }
++                if (needRebind) break;
++            }
++            if (needRebind)
++                buffersDirty = true;
+             // A new program in a stage reads its constant buffers from the stage's bindings, which stay; nothing to
+             // rebind.
+         }
+         if (p->stateHash != boundStateHash) {
+-            bump(GetDeko3DStats().stateBinds);
++            ++statStateBinds;
+             // banjo-nx (2026-10-19, CPU proposal 13): only the groups whose state differs from what is bound (a group
+             // the GPU already holds is a redundant command). The stencil values and the depth bias are left as they
+             // are by a pipeline that does not set them (no stencil, a dynamic bias), as before; the dynamic setters
+@@ -514,6 +544,7 @@
+                 dkCmdBufBindImageDescriptorSet(cl.cmd, addr, set->imageCount);
+                 cl.boundImageSet = addr;
+                 cl.boundImageCount = set->imageCount;
++                cl.texturesDirty = true;
+             }
+             cl.boundImageSetObj = set;  // banjo-nx (2026-10-19, txq): its sizes
+         }
+@@ -523,6 +554,7 @@
+                 dkCmdBufBindSamplerDescriptorSet(cl.cmd, addr, set->samplerCount);
+                 cl.boundSamplerSet = addr;
+                 cl.boundSamplerCount = set->samplerCount;
++                cl.texturesDirty = true;
+             }
+         }
+     }
+@@ -617,6 +649,7 @@
+             return;
+         bindSetTables(*this, set);
+         bindSetBuffers(graphicsLayout, setIndex, set, nullptr, 0, graphicsUbo, graphicsUboValid, uboBoundStages, graphicsSsbo, graphicsSsboValid, ssboBoundStages);
++        buffersDirty = true;
+     }
+ 
+     void Deko3DCommandList::setGraphicsDescriptorSetDynamic(RenderDescriptorSet *descriptorSet, uint32_t setIndex, const uint32_t *dynamicOffsets, uint32_t dynamicOffsetsCount) {
+@@ -625,6 +658,7 @@
+             return;
+         bindSetTables(*this, set);
+         bindSetBuffers(graphicsLayout, setIndex, set, dynamicOffsets, dynamicOffsetsCount, graphicsUbo, graphicsUboValid, uboBoundStages, graphicsSsbo, graphicsSsboValid, ssboBoundStages);
++        buffersDirty = true;
+     }
+ 
+     void Deko3DCommandList::setGraphicsRootDescriptor(RenderBufferReference, uint32_t) {}
+@@ -940,9 +974,10 @@
+         // banjo-nx (2026-10-18): deko3d drops the Zcull data only when another depth target is bound; a copy into the
+         // bound one (the copy engine does not update Zcull) leaves it describing the old depth, which would cull draws
+         // the new depth passes.
+-        if (Deko3DGetOptions().zcull && (dst->desc.flags & RenderTextureFlag::DEPTH_TARGET))
++        if (Deko3DGetOptions().zcull && (dst->desc.flags & RenderTextureFlag::DEPTH_TARGET)) {
+             flushBarriers();
+             dkCmdBufBarrier(cmd, DkBarrier_None, DkInvalidateFlags_Zcull);
++        }
+     }
+ 
+     void Deko3DCommandList::copyBuffer(const RenderBuffer *dst, const RenderBuffer *src) {
+@@ -1045,6 +1080,7 @@
+             cl->graphicsSsbo[slot] = e;
+             cl->graphicsSsboValid |= 1u << slot;
+             cl->ssboBoundStages[slot] = 0;
++            cl->buffersDirty = true;
+         }
+         return true;
+     }
+@@ -1059,6 +1095,7 @@
+             cl->graphicsSsbo[AddressWindowSlot] = e;
+             cl->graphicsSsboValid |= 1u << AddressWindowSlot;
+             cl->ssboBoundStages[AddressWindowSlot] = 0;
++            cl->buffersDirty = true;
+         }
+         return true;
+     }
+@@ -1072,6 +1109,7 @@
+             cl->graphicsUbo[slot] = e;
+             cl->graphicsUboValid |= 1u << slot;
+             cl->uboBoundStages[slot] = 0;
++            cl->buffersDirty = true;
+         }
+         return true;
+     }
+@@ -1101,11 +1139,20 @@
+             return false;
+         cl->sharedWords = static_cast<const uint8_t *>(cpu);
+         cl->sharedWordsSize = size;
++        cl->texturesDirty = true;
+         if (!cpu)
+             cl->sharedCpu = nullptr;  // looked up again where the bound buffer is
+         return true;
+     }
+ 
++    bool Deko3DNotifyTexturesDirty(RenderCommandList *commandList) {
++        Deko3DCommandList *cl = static_cast<Deko3DCommandList *>(commandList);
++        if (!cl)
++            return false;
++        cl->texturesDirty = true;
++        return true;
++    }
++
+     bool Deko3DSetBlendConstant(RenderCommandList *commandList, const float rgba[4]) {
+         if (!commandList)
+             return false;
+--- a/plume/plume_deko3d.h
++++ b/plume/plume_deko3d.h
+@@ -350,6 +350,9 @@
+         DkGpuAddr indexAddress = 0;
+         bool descriptorsInvalidated = false;
+         uint64_t descriptorEpoch = 0;
++        bool texturesDirty = true;
++        bool buffersDirty = true;
++        const Deko3DGraphicsPipeline *lastBufferPipeline = nullptr;
+         const Deko3DFramebuffer *framebuffer = nullptr;
+         // Bound textures: the handles last bound per graphics stage, and the buffer the shared constants were last
+         // found in (GPU range and CPU address).
+@@ -416,6 +419,8 @@
+         // internal
+         void addMemory(size_t minimum);
+         bool transientAlloc(uint32_t size, uint32_t alignment, void **cpu, DkGpuAddr *gpu);
++        uint64_t currentEpoch() const;
++        void flushDescriptorInvalidateSlow(uint64_t epoch);
+         void flushDescriptorInvalidate();
+         // banjo-nx (2026-10-19, Deko3DOptions::mergeBarriers): the barrier recorded but not yet emitted.
+         DkBarrier pendingBarrierMode = DkBarrier_None;
+@@ -424,14 +429,17 @@
+         // banjo-nx (2026-10-19, render-thread proposal 13): per-draw counters of this list, added to the totals at end()
+         // (no atomic read-modify-write per draw: the A57 has no LSE).
+         uint64_t statDraws = 0, statWindowDraws = 0;
++        uint64_t statPipelineBinds = 0, statStateBinds = 0;
++        uint64_t statBarriersPrimitives = 0, statBarriersFragments = 0, statBarriersFull = 0, statBarriersImageInvalidate = 0;
+         void emitBarrier(DkBarrier mode, uint32_t invalidate);
+         void flushBarriers() {
+             if (pendingBarrier)
+                 emitBarrier(pendingBarrierMode, pendingBarrierInvalidate);
+         }
+         void invalidateZcullAfterCopy(const Deko3DTexture *dst);
+-        uint64_t currentEpoch() const;
++        void bindGraphicsBuffersSlow();
+         void bindGraphicsBuffers();
++        void bindTexturesSlow();
+         void bindTextures();
+         void restoreScissors();
+     };
+@@ -638,6 +646,7 @@
+     bool Deko3DPushUniform(RenderCommandList *commandList, uint64_t address, uint32_t uboSize, uint32_t offset,
+                            const void *data, uint32_t size);
+     bool Deko3DSetSharedWords(RenderCommandList *commandList, const void *cpu, uint32_t size);
++    bool Deko3DNotifyTexturesDirty(RenderCommandList *commandList);
+     // banjo-nx: the queue lost (dkQueueIsInErrorState).
+     bool Deko3DDeviceLost(RenderDevice *device);
+     // sa2-nx (2026-10-20, 1.0.3.1): the size the swapchain should have, the console display's (1920x1080 docked,
+@@ -689,4 +698,26 @@
+     // banjo-nx (2026-10-19, render-thread proposal 13): read inline (barriers() reads it per call).
+     extern Deko3DOptions g_deko3dOptions;
+     inline const Deko3DOptions &Deko3DGetOptions() { return g_deko3dOptions; }
++
++    inline uint64_t Deko3DCommandList::currentEpoch() const {
++        return device->descriptorEpoch.load(std::memory_order_relaxed) ^ (device->codeEpoch.load(std::memory_order_relaxed) << 40);
++    }
++
++    inline void Deko3DCommandList::flushDescriptorInvalidate() {
++        const uint64_t epoch = currentEpoch();
++        if (__builtin_expect(epoch != descriptorEpoch, 0))
++            flushDescriptorInvalidateSlow(epoch);
++    }
++
++    inline void Deko3DCommandList::bindGraphicsBuffers() {
++        if (__builtin_expect(!buffersDirty, 1))
++            return;
++        bindGraphicsBuffersSlow();
++    }
++
++    inline void Deko3DCommandList::bindTextures() {
++        if (!texturesDirty || (graphicsPipeline && !graphicsPipeline->boundTextures))
++            return;
++        bindTexturesSlow();
++    }
+ };

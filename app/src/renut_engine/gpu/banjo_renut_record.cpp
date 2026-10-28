@@ -14,6 +14,9 @@
 
 #include <plume_render_interface.h>
 #include <plume_vulkan.h>
+#if defined(PLUME_DEKO3D)
+#include <plume_deko3d.h>
+#endif
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -31,11 +34,21 @@ REXCVAR_DEFINE_BOOL(banjo_renut_record_worker, true, "Banjo/Enhancements",
                     "same order, so plume's and NVK's recording work (a quarter of the render thread on the console) "
                     "leaves the render thread. The list is ended and submitted once the worker has played all of it. "
                     "Same commands, same order. CPU group; in-run A/B target 14");
-REXCVAR_DEFINE_INT32(banjo_renut_record_worker_core, 0, "Banjo",
+REXCVAR_DEFINE_INT32(banjo_renut_record_worker_core, -2, "Banjo",
                      "Renut's renderer, the Switch: the core of banjo_renut_record_worker's thread (-1: not pinned; "
-                     "the render thread has banjo_ring_core, the pipeline workers banjo_background_compile_core)")
-    .range(-1, 2);
+                     "-2: core 3 when the process has four cores, else core 0; the render thread has banjo_ring_core, "
+                     "the pipeline workers banjo_background_compile_core)")
+    .range(-2, 3);
+// naruto-nx (2026-10-28): the worker on the deko3d back end (banjo-nx's was Vulkan only). Off until a console run proves
+// it (naruto.toml: naruto_deko3d_record_worker = true; in-run A/B: banjo_renut_ab_target = 14).
+REXCVAR_DEFINE_BOOL(naruto_deko3d_record_worker, false, "Naruto",
+                    "Switch, deko3d: banjo_renut_record_worker also on the deko3d back end. Plume's deko3d recording "
+                    "(setPipeline, shader and texture binds, draws, constant pushes) moves to a worker on another core. "
+                    "Needs banjo_renut_record_worker. Experimental");
 REXCVAR_DECLARE(bool, banjo_cpu_verify);
+#if REX_PLATFORM_SWITCH
+extern "C" unsigned long long RexSwitchProcessCoreMask(void);  // sdk/src/core/threading_switch.cpp
+#endif
 
 namespace banjo::renut_gpu::record {
 namespace {
@@ -52,7 +65,9 @@ enum Op : uint16_t {
   kSetIndexBuffer, kSetVertexBuffers, kSetViewports, kSetScissors, kSetFramebuffer, kSetDepthBias,
   kSetStencilReference, kClearColor, kClearDepthStencil, kCopyBufferRegion, kCopyTextureRegion, kCopyBuffer,
   kCopyTexture, kResolveTexture, kResolveTextureRegion, kDiscardTexture, kResetQueryPool, kWriteTimestamp,
-  kBlendConstants, kOpCount
+  kBlendConstants,
+  // naruto-nx: plume_deko3d.h's calls that take the list (Recorder, Play).
+  kDkBindUniform, kDkPushUniform, kDkSharedWords, kDkTexturesDirty, kDkMemExport, kDkFetchData, kOpCount
 };
 
 struct Header {
@@ -101,7 +116,9 @@ void Play(plume::RenderCommandList *cmd, const uint8_t *p, const uint8_t *end);
 
 void Worker() {
 #if REX_PLATFORM_SWITCH
-  const int core = REXCVAR_GET(banjo_renut_record_worker_core);
+  int core = REXCVAR_GET(banjo_renut_record_worker_core);
+  if (core == -2)  // naruto-nx: the fourth core when the title has it (audio and the guest pool are there too)
+    core = (RexSwitchProcessCoreMask() & 0x8) ? 3 : 0;
   const bool priority_ok = RexSwitchSetCurrentThreadPriorityOk(kWorkerPriority);
   const bool core_ok = core < 0 || RexSwitchPinCurrentThreadToCore(core);
   REXLOG_INFO("[renut] record worker at priority 0x{:X}{}, {}", kWorkerPriority, priority_ok ? "" : " (NOT accepted)",
@@ -172,6 +189,26 @@ struct ResolveRegionHead { const plume::RenderTexture *dst; uint32_t x, y; const
                            uint32_t has_rect; plume::RenderResolveMode mode; };
 struct QueryHead { const plume::RenderQueryPool *pool; uint32_t first, count; };
 struct Floats4 { float v[4]; };
+struct DkUniformHead { uint64_t address; uint32_t slot, size; };
+struct DkPushHead { uint64_t address; uint32_t ubo_size, offset, size, pad; };
+struct DkSharedHead { uint32_t has_cpu, size; };
+struct DkFetchHead { uint64_t address; uint32_t size, pad; };
+
+#if defined(PLUME_DEKO3D)
+// The worker's copy of the shared constants plume reads the bound textures' handles from (Deko3DSetSharedWords), kept
+// as the renderer's copy was at this point of the stream: set by a recorded SetSharedWords, then every recorded push to
+// the shared buffer's address (slot 2, the last Deko3DBindUniform of it) is applied to it before it is played.
+// Worker thread only.
+struct SharedShadow {
+  static constexpr uint32_t kCapacity = 8192;
+  alignas(16) uint8_t bytes[kCapacity];
+  uint32_t size = 0;
+  uint64_t address = 0;  // the shared buffer (uniform slot 2) as last bound
+  bool active = false;
+};
+SharedShadow g_shadow;
+constexpr uint32_t kSharedUniformSlot = 2;  // plume_deko3d_commands.cpp: SharedUboSlot
+#endif
 
 void Play(plume::RenderCommandList *cmd, const uint8_t *p, const uint8_t *end) {
   while (p < end) {
@@ -179,7 +216,12 @@ void Play(plume::RenderCommandList *cmd, const uint8_t *p, const uint8_t *end) {
     const uint8_t *next = p + h.size;
     p += sizeof(Header);
     switch (Op(h.op)) {
-    case kBegin: cmd->begin(); break;
+    case kBegin:
+#if defined(PLUME_DEKO3D)
+      g_shadow.active = false;  // plume's begin() forgets the shared words too
+#endif
+      cmd->begin();
+      break;
     case kEnd: cmd->end(); break;
     case kBarriers: {
       const Barriers &b = At<Barriers>(p);
@@ -309,11 +351,66 @@ void Play(plume::RenderCommandList *cmd, const uint8_t *p, const uint8_t *end) {
     case kWriteTimestamp: { const QueryHead &q = At<QueryHead>(p); cmd->writeTimestamp(q.pool, q.first); break; }
     case kBlendConstants: {
       const Floats4 &f = At<Floats4>(p);
+#if defined(PLUME_DEKO3D)
+      if (::renut::gpu::IsDeko3D()) {
+        plume::Deko3DSetBlendConstant(cmd, f.v);
+        break;
+      }
+#endif
       VkCommandBuffer vk = static_cast<plume::VulkanCommandList *>(cmd)->vk;
       if (vk && vkCmdSetBlendConstants)
         vkCmdSetBlendConstants(vk, f.v);
       break;
     }
+#if defined(PLUME_DEKO3D)
+    case kDkBindUniform: {
+      const DkUniformHead &u = At<DkUniformHead>(p);
+      if (u.slot == kSharedUniformSlot)
+        g_shadow.address = u.address;
+      plume::Deko3DBindUniform(cmd, u.slot, u.address, u.size);
+      break;
+    }
+    case kDkPushUniform: {
+      const DkPushHead &u = At<DkPushHead>(p);
+      const uint8_t *data = Array<uint8_t>(p, u.size);
+      // The renderer's copy of the shared constants follows its pushes; so does the worker's.
+      if (g_shadow.active && u.address == g_shadow.address && u.offset + u.size <= g_shadow.size)
+        std::memcpy(g_shadow.bytes + u.offset, data, u.size);
+      plume::Deko3DPushUniform(cmd, u.address, u.ubo_size, u.offset, data, u.size);
+      break;
+    }
+    case kDkSharedWords: {
+      const DkSharedHead &w = At<DkSharedHead>(p);
+      if (w.has_cpu && w.size <= SharedShadow::kCapacity) {
+        const uint8_t *data = Array<uint8_t>(p, w.size);
+        std::memcpy(g_shadow.bytes, data, w.size);
+        g_shadow.size = w.size;
+        g_shadow.active = true;
+        plume::Deko3DSetSharedWords(cmd, g_shadow.bytes, w.size);
+      } else {
+        if (w.has_cpu) {
+          static bool logged = false;
+          if (!logged) {
+            logged = true;
+            REXLOG_ERROR("[renut] record worker: {} bytes of shared constants do not fit the worker's copy ({}); plume "
+                         "reads them where the bound buffer is", w.size, SharedShadow::kCapacity);
+          }
+        }
+        g_shadow.active = false;
+        plume::Deko3DSetSharedWords(cmd, nullptr, 0);
+      }
+      break;
+    }
+    case kDkTexturesDirty: plume::Deko3DNotifyTexturesDirty(cmd); break;
+    case kDkMemExport:
+      plume::Deko3DBindMemExport(cmd, static_cast<const plume::RenderBuffer *>(At<Ptr>(p).p));
+      break;
+    case kDkFetchData: {
+      const DkFetchHead &f = At<DkFetchHead>(p);
+      plume::Deko3DBindFetchData(cmd, f.address, f.size);
+      break;
+    }
+#endif
     default:
       REXLOG_ERROR("[renut] record worker: unknown command {}", h.op);
       return;
@@ -567,6 +664,31 @@ public:
     Put(Emit(kBlendConstants, Size<Floats4>()), f);
     Done();
   }
+  // naruto-nx: plume_deko3d.h's calls that take the list.
+  void DkBindUniform(uint32_t slot, uint64_t address, uint32_t size) {
+    Put(Emit(kDkBindUniform, Size<DkUniformHead>()), DkUniformHead{address, slot, size});
+    Done();
+  }
+  void DkPushUniform(uint64_t address, uint32_t ubo_size, uint32_t offset, const void *data, uint32_t size) {
+    uint8_t *p = Emit(kDkPushUniform, Size<DkPushHead>() + Size<uint8_t>(size));
+    PutArray(Put(p, DkPushHead{address, ubo_size, offset, size, 0}), static_cast<const uint8_t *>(data), size);
+    Done();
+  }
+  void DkSharedWords(const void *cpu, uint32_t size) {
+    const uint32_t copied = cpu ? size : 0;
+    uint8_t *p = Emit(kDkSharedWords, Size<DkSharedHead>() + Size<uint8_t>(copied));
+    PutArray(Put(p, DkSharedHead{cpu ? 1u : 0u, size}), static_cast<const uint8_t *>(cpu), copied);
+    Done();
+  }
+  void DkTexturesDirty() {
+    Emit(kDkTexturesDirty, 0);
+    Done();
+  }
+  void DkMemExport(const void *buffer) { PutPtr(kDkMemExport, buffer); }
+  void DkFetchData(uint64_t address, uint32_t size) {
+    Put(Emit(kDkFetchData, Size<DkFetchHead>()), DkFetchHead{address, size, 0});
+    Done();
+  }
 
 private:
   Chunk *cur_ = nullptr;
@@ -604,8 +726,10 @@ Recorder g_recorder;
 }  // namespace
 
 plume::RenderCommandList *Wrap(plume::RenderCommandList *real) {
-  // Vulkan only: the blend constant is played as a Vulkan command (SetBlendConstant's own call).
-  if (!real || !::renut::gpu::IsVulkan() || !On()) {
+  // Vulkan, or deko3d when naruto_deko3d_record_worker is set (the blend constant and plume_deko3d.h's calls that take
+  // the list are commands of their own).
+  static const bool deko3d_ok = REXCVAR_GET(naruto_deko3d_record_worker);
+  if (!real || !(::renut::gpu::IsVulkan() || (::renut::gpu::IsDeko3D() && deko3d_ok)) || !On()) {
     g_direct_lists.fetch_add(1, std::memory_order_relaxed);
     return real;
   }
@@ -636,6 +760,93 @@ bool SetBlendConstants(plume::RenderCommandList *cmd, const float rgba[4]) {
 
 bool IsProxy(const plume::RenderCommandList *cmd) {
   return cmd == &g_recorder;
+}
+
+// naruto-nx: plume_deko3d.h's calls that take the list, for the render thread: a command on the proxy, plume's own call
+// on a real list.
+bool Deko3DBindUniform(plume::RenderCommandList *cmd, uint32_t slot, uint64_t address, uint32_t size) {
+#if defined(PLUME_DEKO3D)
+  if (cmd == &g_recorder) {
+    g_recorder.DkBindUniform(slot, address, size);
+    return true;
+  }
+  return plume::Deko3DBindUniform(cmd, slot, address, size);
+#else
+  (void)cmd; (void)slot; (void)address; (void)size;
+  return false;
+#endif
+}
+
+bool Deko3DPushUniform(plume::RenderCommandList *cmd, uint64_t address, uint32_t ubo_size, uint32_t offset,
+                       const void *data, uint32_t size) {
+#if defined(PLUME_DEKO3D)
+  if (cmd == &g_recorder) {
+    if (!address || !size || offset + size > ubo_size)  // plume's own refusals
+      return false;
+    g_recorder.DkPushUniform(address, ubo_size, offset, data, size);
+    return true;
+  }
+  return plume::Deko3DPushUniform(cmd, address, ubo_size, offset, data, size);
+#else
+  (void)cmd; (void)address; (void)ubo_size; (void)offset; (void)data; (void)size;
+  return false;
+#endif
+}
+
+bool Deko3DSetSharedWords(plume::RenderCommandList *cmd, const void *cpu, uint32_t size) {
+#if defined(PLUME_DEKO3D)
+  if (cmd == &g_recorder) {
+    g_recorder.DkSharedWords(cpu, size);
+    return true;
+  }
+  return plume::Deko3DSetSharedWords(cmd, cpu, size);
+#else
+  (void)cmd; (void)cpu; (void)size;
+  return false;
+#endif
+}
+
+bool Deko3DNotifyTexturesDirty(plume::RenderCommandList *cmd) {
+#if defined(PLUME_DEKO3D)
+  if (cmd == &g_recorder) {
+    g_recorder.DkTexturesDirty();
+    return true;
+  }
+  return plume::Deko3DNotifyTexturesDirty(cmd);
+#else
+  (void)cmd;
+  return false;
+#endif
+}
+
+bool Deko3DBindMemExport(plume::RenderCommandList *cmd, const plume::RenderBuffer *buffer) {
+#if defined(PLUME_DEKO3D)
+  if (cmd == &g_recorder) {
+    if (!buffer)
+      return false;
+    g_recorder.DkMemExport(buffer);
+    return true;
+  }
+  return plume::Deko3DBindMemExport(cmd, buffer);
+#else
+  (void)cmd; (void)buffer;
+  return false;
+#endif
+}
+
+bool Deko3DBindFetchData(plume::RenderCommandList *cmd, uint64_t address, uint32_t size) {
+#if defined(PLUME_DEKO3D)
+  if (cmd == &g_recorder) {
+    if (!address)
+      return false;
+    g_recorder.DkFetchData(address, size);
+    return true;
+  }
+  return plume::Deko3DBindFetchData(cmd, address, size);
+#else
+  (void)cmd; (void)address; (void)size;
+  return false;
+#endif
 }
 
 void Shutdown() {

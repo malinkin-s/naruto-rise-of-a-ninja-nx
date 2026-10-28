@@ -105,7 +105,7 @@ bool ReadVector4(u32 va, float out[4]) {
 // void D3DDevice_DrawVertices(D3DDevice*, D3DPRIMITIVETYPE, UINT StartVertex,
 //                             UINT VertexCount) [0x8222C7A0]
 void D3DDevice_DrawVertices_hook(u32 device, u32 primitive, u32 start_vertex, u32 vertex_count) {
-  if (!Active())
+  if (!Active() || !vertex_count)
     return;
   DrawCall call;
   call.primitive = primitive;
@@ -121,7 +121,7 @@ void D3DDevice_DrawVertices_hook(u32 device, u32 primitive, u32 start_vertex, u3
 //                                    UINT StartIndex, UINT IndexCount) [0x826567C8]
 void D3DDevice_DrawIndexedVertices_hook(u32 device, u32 primitive, u32 base_vertex,
                                         u32 start_index, u32 index_count) {
-  if (!Active())
+  if (!Active() || !index_count)
     return;
   DrawCall call;
   call.primitive = primitive;
@@ -144,7 +144,7 @@ void D3DDevice_DrawIndexedVertices_hook(u32 device, u32 primitive, u32 base_vert
 // tessellated on the host (DrawCall::tessellation).
 void D3DDevice_DrawIndexedTessellatedVertices_hook(u32 device, u32 primitive, u32 base_vertex,
                                                    u32 start_index, u32 index_count) {
-  if (!Active())
+  if (!Active() || !index_count)
     return;
   DrawCall call;
   call.primitive = primitive;
@@ -163,7 +163,7 @@ void D3DDevice_DrawIndexedTessellatedVertices_hook(u32 device, u32 primitive, u3
 //                               const void *pVertexStreamZeroData, UINT Stride) [0x8222E520]
 void D3DDevice_DrawVerticesUP_hook(u32 device, u32 primitive, u32 vertex_count, u32 data,
                                    u32 stride) {
-  if (!Active() || !data)
+  if (!Active() || !data || !vertex_count)
     return;
   DrawCall call;
   call.primitive = primitive;
@@ -183,7 +183,7 @@ void D3DDevice_DrawVerticesUP_hook(u32 device, u32 primitive, u32 vertex_count, 
 void D3DDevice_DrawIndexedVerticesUP_hook(u32 device, u32 primitive, u32 min_vertex,
                                           u32 num_vertices, u32 index_count, u32 index_data,
                                           u32 index_format, u32 vertex_data, u32 stride) {
-  if (!Active() || !index_data || !vertex_data)
+  if (!Active() || !index_data || !vertex_data || !index_count)
     return;
   DrawCall call;
   call.primitive = primitive;

@@ -4,6 +4,7 @@
 #include "renut_engine/gpu/backend/queued.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <cstddef>
@@ -234,17 +235,25 @@ constexpr u32 DeltaChunkSize(u32 i) {
 // swap flags: the hooks read and write them on the live device). Their chunks are not compared; the render thread's
 // device keeps them as the frame's whole copy had them.
 constexpr u32 kDeltaUnreadEnd = kDeltaVertexF - 0x300;  // 0x480: the fetch constants' start
-// naruto-nx: Naruto's private words that the render thread does not read from a snapshot: from the fence block (N&B's
-// layout, +10880) to before the vertex declaration (+11812), aligned to 64 from kDeltaTailBegin. SA2: 11008-12224.
+// naruto-nx: Naruto's private words that the render thread does not read from a snapshot:
+// 1) from the fence block (N&B's layout, +10880) to before the vertex declaration (+11812), aligned to 64 from kDeltaTailBegin.
+// 2) from after the vertex declaration (+11816) to before the index buffer (+12428), aligned to 64 from kDeltaTailBegin (11840 to 12416).
 constexpr u32 kDeltaPrivateUnreadBegin = 10880, kDeltaPrivateUnreadEnd = 11776;
+constexpr u32 kDeltaPrivateUnread2Begin = 11840, kDeltaPrivateUnread2End = 12416;
 constexpr bool DeltaChunkRead(u32 i) {
   const u32 at = DeltaChunkOffset(i);
-  return !(at < kDeltaUnreadEnd || (at >= kDeltaPrivateUnreadBegin && at + 64 <= kDeltaPrivateUnreadEnd));
+  return !(at < kDeltaUnreadEnd ||
+           (at >= kDeltaPrivateUnreadBegin && at + 64 <= kDeltaPrivateUnreadEnd) ||
+           (at >= kDeltaPrivateUnread2Begin && at + 64 <= kDeltaPrivateUnread2End));
 }
 static_assert(kDeltaUnreadEnd == 0x480 && kDeltaUnreadEnd % kDeltaUnitBytes == 0);
 static_assert((kDeltaPrivateUnreadBegin - kDeltaTailBegin) % kDeltaUnitBytes == 0 &&
               (kDeltaPrivateUnreadEnd - kDeltaTailBegin) % kDeltaUnitBytes == 0);
 static_assert(d3d::kDeviceOffsetVertexDeclaration >= kDeltaPrivateUnreadEnd);
+static_assert((kDeltaPrivateUnread2Begin - kDeltaTailBegin) % kDeltaUnitBytes == 0 &&
+              (kDeltaPrivateUnread2End - kDeltaTailBegin) % kDeltaUnitBytes == 0);
+static_assert(kDeltaPrivateUnread2Begin >= d3d::kDeviceOffsetVertexDeclaration + 4);
+static_assert(kDeltaPrivateUnread2End <= d3d::kDeviceOffsetIndexBuffer);
 // The chunks compared: all, or the read ones.
 struct DeltaChunkList {
   u32 count = 0;
@@ -262,7 +271,9 @@ constexpr DeltaChunkList kDeltaReadChunks = MakeDeltaChunkList(true);
 static_assert(kDeltaReadChunks.count > 0 && kDeltaReadChunks.count < kDeltaAllChunks.count);  // naruto-nx: SA2's was 40
 // Whether device byte 'at' is one the render thread reads (the verify mode compares those).
 constexpr bool DeltaByteRead(u32 at) {
-  return !(at < kDeltaUnreadEnd || (at >= kDeltaPrivateUnreadBegin && at < kDeltaPrivateUnreadEnd));
+  return !(at < kDeltaUnreadEnd ||
+           (at >= kDeltaPrivateUnreadBegin && at < kDeltaPrivateUnreadEnd) ||
+           (at >= kDeltaPrivateUnread2Begin && at < kDeltaPrivateUnread2End));
 }
 
 struct DeltaHeader {
@@ -434,27 +445,66 @@ const u8 *DeviceForDraw(const DrawCapture &capture) {
   return g_delta_device;
 }
 
-void QueueCapture(DrawCapture *capture) {
-  // sa2-nx (2026-10-20, sa2_renut_prefetch_next): the capture and its device bytes, written on the game thread's core,
-  // are fetched into the render thread's cache while it does the item before this one.
-  render_thread::QueuePrefetched(capture, capture->state.data(), [capture] {
-    DrawCall call = capture->call;
-    if (!capture->vertices.empty())
-      call.up_vertices = capture->vertices.data();
-    if (!capture->indices.empty())
-      call.up_indices = capture->indices.data();
-    const u8 *device = DeviceForDraw(*capture);
-    if (capture->snapshot != SnapshotKind::Whole && ChainConstantsOn()) {
-      // sa2-nx (sa2_renut_snapshot_deltas_constants): every constant is the rebuilt device's (no running device).
-      const ReplayConstants chain{nullptr, ~uint64_t(0), ~uint64_t(0), &g_chain_vs_dirty, &g_chain_ps_dirty,
-                                  g_chain_id};
-      DrawStateLocked(device, call, &chain);
-    } else {
-      DrawStateLocked(device, call);
+// Batched draw queuing: batches up to 32 draws under a single render_thread work item
+// using a preallocated ring buffer of batches to ensure zero heap allocations in std::function.
+struct QueuedDrawBatch {
+  static constexpr size_t kCapacity = 32;
+  std::array<DrawCapture *, kCapacity> captures{};
+  size_t count = 0;
+};
+static QueuedDrawBatch g_pending_draw_batch;
+static std::mutex g_draw_batch_mutex;
+
+static constexpr size_t kBatchRingSize = 1024;
+static QueuedDrawBatch g_batch_ring[kBatchRingSize];
+static std::atomic<uint32_t> g_batch_head{0};
+
+static void ExecuteSingleCapture(DrawCapture *capture) {
+  DrawCall call = capture->call;
+  if (!capture->vertices.empty())
+    call.up_vertices = capture->vertices.data();
+  if (!capture->indices.empty())
+    call.up_indices = capture->indices.data();
+  const u8 *device = DeviceForDraw(*capture);
+  if (capture->snapshot != SnapshotKind::Whole && ChainConstantsOn()) {
+    // sa2-nx (sa2_renut_snapshot_deltas_constants): every constant is the rebuilt device's (no running device).
+    const ReplayConstants chain{nullptr, ~uint64_t(0), ~uint64_t(0), &g_chain_vs_dirty, &g_chain_ps_dirty,
+                                g_chain_id};
+    DrawStateLocked(device, call, &chain);
+  } else {
+    DrawStateLocked(device, call);
+  }
+  g_chain_hint = {};  // sa2-nx: only for the draw itself
+  g_capture_pool.Give(capture, true);
+}
+
+static void FlushDrawBatchLocked() {
+  if (g_pending_draw_batch.count == 0)
+    return;
+  const uint32_t slot = g_batch_head.fetch_add(1, std::memory_order_relaxed) % kBatchRingSize;
+  QueuedDrawBatch *batch = &g_batch_ring[slot];
+  *batch = g_pending_draw_batch;
+  g_pending_draw_batch.count = 0;
+
+  DrawCapture *first = batch->captures[0];
+  render_thread::QueuePrefetched(first, first->state.data(), [batch] {
+    const size_t count = batch->count;
+    for (size_t i = 0; i < count; ++i) {
+      if (i + 1 < count) {
+        __builtin_prefetch(batch->captures[i + 1]);
+        __builtin_prefetch(batch->captures[i + 1]->state.data());
+      }
+      ExecuteSingleCapture(batch->captures[i]);
     }
-    g_chain_hint = {};  // sa2-nx: only for the draw itself
-    g_capture_pool.Give(capture, true);
   });
+}
+
+void QueueCapture(DrawCapture *capture) {
+  std::lock_guard lock(g_draw_batch_mutex);
+  g_pending_draw_batch.captures[g_pending_draw_batch.count++] = capture;
+  if (g_pending_draw_batch.count >= QueuedDrawBatch::kCapacity) {
+    FlushDrawBatchLocked();
+  }
 }
 
 DrawCapture *Capture(u32 device_va, const DrawCall &call) {
@@ -550,7 +600,13 @@ DrawCapture *CaptureDelta(u32 device_va, const DrawCall &call) {
 
 } // namespace
 
+void FlushDrawBatch() {
+  std::lock_guard lock(g_draw_batch_mutex);
+  FlushDrawBatchLocked();
+}
+
 void SnapshotDeltasNewFrame() {
+  FlushDrawBatch();
   if (!DeltasOn())
     return;
   std::lock_guard lock(g_delta.mutex);
@@ -558,6 +614,7 @@ void SnapshotDeltasNewFrame() {
 }
 
 void ForgetSnapshotDeltas() {
+  FlushDrawBatch();
   if (!DeltasOn())
     return;
   std::lock_guard lock(g_delta.mutex);
@@ -693,6 +750,7 @@ void QueueClear(u32 device_va, u32 flags, const ClearRect *rect, const float col
                 u32 stencil) {
   FlushDeferredVertices(device_va);
   RunReadyCallbacks();
+  FlushDrawBatch();
   const auto *device = GuestPtr<const u8>(device_va);
   if (!device)
     return;
@@ -716,6 +774,7 @@ void QueueResolve(u32 device_va, u32 flags, const ClearRect *source_rect, u32 de
                   const float clear_color[4], float clear_depth, u32 clear_stencil) {
   FlushDeferredVertices(device_va);
   RunReadyCallbacks();
+  FlushDrawBatch();
   const auto *device = GuestPtr<const u8>(device_va);
   if (!device)
     return;

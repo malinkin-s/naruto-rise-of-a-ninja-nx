@@ -47,7 +47,7 @@ REXCVAR_DEFINE_STRING(renut_resolution, "720p", "Nuts&Bolts/Graphics",
 // sa2-nx (1.0.3.1, the user's call: 2x cost the console a little too much CPU): off by default again.
 // naruto-nx (2026-10-24): Naruto draws its 3D scene with 4x MSAA (tiled in EDRAM on the 360, nearly free there); the
 // host target with 4 samples made each blended layer cost 4x at the Switch's 460 MHz (handheld).
-REXCVAR_DEFINE_INT32(naruto_guest_msaa_max, 0, "SA2/Renderer",
+REXCVAR_DEFINE_INT32(naruto_guest_msaa_max, 1, "SA2/Renderer",
                      "Renut's renderer: at most this many samples for the game's multisampled render targets "
                      "(1 = single-sampled, resolves become copies; 0 = as the game asks). Read at start")
     .range(0, 4);

@@ -67,10 +67,15 @@ using namespace renut::gpu;
 extern std::atomic<uint64_t> g_sa2_game_frames;
 REXCVAR_DECLARE(bool, sa2_renut_gamma_ramp);  // sa2-nx (2026-10-20): backend/present.cpp
 // sa2-nx (2026-10-20, sa2_renut_core_layout): the SDK's core layout (system/xthread.cpp).
-REXCVAR_DEFINE_INT32(naruto_guest_cores, 7, "Naruto",
+REXCVAR_DEFINE_INT32(naruto_guest_cores, 15, "Naruto",
                      "Switch: the core mask of the guest threads other than the game's main thread (6 = cores 1-2, "
-                     "7 = all three)");
+                     "7 = all three, 15 = all four when the title was started with four cores; the cores the process "
+                     "does not have are dropped)");
 extern "C" uint32_t RexSetGuestThreadCoreLayout(int main_core, uint32_t others_mask, int others_preferred);
+extern "C" unsigned long long RexSwitchProcessCoreMask(void);
+#if REX_PLATFORM_SWITCH
+extern "C" bool RexSwitchSetCurrentThreadPriorityOk(int priority);
+#endif
 
 // Kernel exports the device code uses.
 REX_IMPORT(__imp__rex_GetCurrentThreadId, GuestGetCurrentThreadId, u32());
@@ -909,13 +914,17 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
     core_layout_done = true;
 #if REX_PLATFORM_SWITCH
     if (REXCVAR_GET(sa2_renut_core_layout)) {
+      // Raise Main XThread to 0x3A (cooperative, strictly above 0x3B guest band)
+      RexSwitchSetCurrentThreadPriorityOk(0x3A);
       // naruto-nx: naruto_guest_cores, the other guest threads' core mask (6 = cores 1-2, as SA2; 7 lets them use core
       // 0's spare time: in Konoha the game's main thread leaves ~30 % of core 0 idle while a guest worker and the
       // render thread fill cores 1-2 and the game's audio starves).
-      const uint32_t others = uint32_t(REXCVAR_GET(naruto_guest_cores)) & 0x7;
-      const uint32_t moved = RexSetGuestThreadCoreLayout(0, others ? others : 0x6, 2);
-      RGPU_INFO("[renut] sa2_renut_core_layout: the guest main thread on core 0, the other guest threads on core mask "
-                "{:#x} ({} threads set)", others ? others : 0x6, moved);
+      const uint32_t process_cores = uint32_t(RexSwitchProcessCoreMask());
+      const uint32_t others = uint32_t(REXCVAR_GET(naruto_guest_cores)) & process_cores;
+      const uint32_t moved = RexSetGuestThreadCoreLayout(0, others ? others : 0x7, 2);
+      RGPU_INFO("[renut] sa2_renut_core_layout: process cores {:#x}; the guest main thread (0x3A) on core 0, the other guest "
+                "threads on core mask {:#x} ({} threads set){}", process_cores, others ? others : 0x7, moved,
+                (process_cores & 0x8) ? "; four cores: audio, XMA and the guest thread pool prefer core 3" : "");
     }
 #endif
   }

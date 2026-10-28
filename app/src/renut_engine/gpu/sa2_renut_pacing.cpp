@@ -94,6 +94,14 @@ void NoteRelease(Clock::time_point arrived, Clock::time_point released, bool lat
     const double work = Ms(arrived - s.released);
     s.work_ms += work;
     s.work_max_ms = std::max(s.work_max_ms, work);
+    // naruto-nx (2026-10-28): a frame over 45 ms is a visible hitch at 60 Hz (3+ refreshes); when they come tells
+    // what they are (a fixed period = a periodic job, none = load).
+    if (work > 45.0) {
+      static Clock::time_point last_hitch{};
+      REXLOG_INFO("[renut] hitch: frame {} of this report took {:.1f} ms from Swap to Swap, {:.2f} s after the last one",
+                  s.frames + 1, work, last_hitch == Clock::time_point{} ? 0.0 : Ms(arrived - last_hitch) / 1000.0);
+      last_hitch = arrived;
+    }
     s.sleep_ms += Ms(released - arrived);
     ++s.frames;
     s.late += late ? 1 : 0;

@@ -18,6 +18,7 @@
 #include "renut_engine/perf/frame_stats.h"
 #include "renut_engine/gpu/guest/guest_memory.h"
 #include "renut_engine/gpu/log.h"
+#include "renut_engine/gpu/backend/queued.h"
 #include "renut_engine/gpu/backend/video.h"
 #include "renut_engine/gpu/banjo_renut_tuning.h"
 
@@ -152,6 +153,8 @@ void Run() {
   }
 #if defined(_WIN32)
   SetThreadDescription(GetCurrentThread(), L"renut render");
+#elif defined(__SWITCH__) || defined(__linux__)
+  pthread_setname_np(pthread_self(), "renut render");
 #endif
   banjo::renut_gpu::OnRenderThreadStart();  // banjo-nx: its core and priority on the Switch
   t_render_thread = true;
@@ -240,6 +243,9 @@ void WakeForWaitLocked() {
 
 void Push(std::function<void()> work, bool locked, const void *prefetch0 = nullptr,
           const void *prefetch1 = nullptr, bool draw = false) {
+  if (!draw) {
+    renut::gpu::FlushDrawBatch();
+  }
   Start();
   {
     std::unique_lock lock(g_mutex);
@@ -247,8 +253,8 @@ void Push(std::function<void()> work, bool locked, const void *prefetch0 = nullp
     if (g_running && !g_stopping) {
       g_queue.push_back({std::move(work), locked, {prefetch0, prefetch1}});
       ++g_items_queued;
-      // sa2-nx (sa2_renut_wake_batch): a draw wakes a sleeping render thread once enough are queued.
-      const bool wake = (g_render_waiting && (!draw || g_queue.size() >= WakeBatch())) ||
+      // Draws are queued in batches (up to 16 draws per item), so waking on >= 1 batch is immediate.
+      const bool wake = (g_render_waiting && (!draw || g_queue.size() >= 1)) ||
                         !banjo::renut_gpu::QueueNotifyIdleOn();
       lock.unlock();
       if (wake)
@@ -331,6 +337,7 @@ void CallbacksRun(uint64_t seq) {
 }
 
 bool WaitForFenceProgress(std::chrono::milliseconds timeout) {
+  renut::gpu::FlushDrawBatch();
   std::unique_lock lock(g_mutex);
   if (!g_running || g_stopping)
     return false;
@@ -466,6 +473,7 @@ uint64_t FramesDone() {
 }
 
 void Drain() {
+  renut::gpu::FlushDrawBatch();
   std::unique_lock lock(g_mutex);
   if (!g_running || std::this_thread::get_id() == g_thread_id)
     return;
@@ -484,6 +492,7 @@ WaitScope::~WaitScope() {
 }
 
 void Stop() {
+  renut::gpu::FlushDrawBatch();
   {
     std::lock_guard lock(g_mutex);
     if (!g_running || g_stopping)
