@@ -13,6 +13,9 @@ Namco, Microsoft or Nintendo. **The game's files are not included: you need your
   overclocked (CPU 1785 / GPU 768 MHz) Konoha runs 27–30 FPS, its heaviest spot 27–28 FPS, and **fights run at 60 FPS**. The
   0.1.1 stock-clock figures (about 20 FPS in Konoha, 32–47 FPS in fights) were not measured again for this version.
 - **Audio streaming** reads from a RAM cache (up to 1 GB, `sa2_io_ranges_mb`), a deeper output queue (14 frames).
+- **Render resolution is a setting.** `naruto.toml` (written next to the NRO at the first start) has `sa2_render_height_handheld` and
+  `sa2_render_height_docked`: 480, 720 (default) or 1080 lines, set separately for handheld and docked; 480 is faster, 1080 is too
+  heavy for this game.
 - **The game's own anti-aliasing (4× MSAA) is off by default** (GPU −10–15 %, fewer dips). Set `naruto_guest_msaa_max = 0` in
   `naruto.toml` to turn it back on.
 - **Experimental, off by default: `naruto_deko3d_record_worker = true`** moves the recording of the renderer's commands to a
@@ -55,6 +58,9 @@ Nintendo. **Файлов игры в сборке нет: нужна своя к
   барьеров). На разогнанной консоли (CPU 1785 / GPU 768 МГц) Коноха идёт на 27–30 FPS, самое тяжёлое место — 27–28 FPS, а **бои — на 60 FPS**.
   Цифры 0.1.1 на стандартных частотах (около 20 FPS в Конохе, 32–47 FPS в боях) для этой версии заново не измерялись.
 - **Стриминг звука** читается из кэша в RAM (до 1 ГБ, `sa2_io_ranges_mb`), очередь вывода глубже (14 кадров).
+- **Разрешение рендера — настройка.** В `naruto.toml` (создаётся рядом с NRO при первом запуске) есть `sa2_render_height_handheld` и
+  `sa2_render_height_docked`: 480, 720 (по умолчанию) или 1080 строк, отдельно для портатива и дока; 480 быстрее, 1080 для этой игры
+  слишком тяжело.
 - **Сглаживание самой игры (4× MSAA) по умолчанию выключено** (GPU −10–15%, меньше просадок). Чтобы вернуть, поставьте
   `naruto_guest_msaa_max = 0` в `naruto.toml`.
 - **Экспериментально, по умолчанию выключено: `naruto_deko3d_record_worker = true`** переносит запись команд рендерера на

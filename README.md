@@ -32,7 +32,7 @@ GPU 460 MHz; the 0.1.1 measurements, not repeated for 0.1.2) and the console ove
 | Saves on the SD card | **Works** | Created, listed and loaded |
 | Bink video (cutscenes) | **Works** | The intro and the first story scenes; not checked through the whole game |
 | Controller | **Works** | Played by hand in the story mode |
-| Settings (`naruto.toml`) | **Works** | Render resolution handheld / docked, the game's anti-aliasing |
+| Settings (`naruto.toml`) | **Works** | Render resolution, separately for handheld and docked (`sa2_render_height_handheld` / `sa2_render_height_docked`: 480, 720 or 1080; 720 by default, 480 is faster), the game's anti-aliasing. The file is written next to the NRO at the first start |
 | Audio | Plays | With the fourth CPU core (below) no audio lag in Konoha; on three cores it stutters when the frame rate drops |
 | Fourth CPU core | **Works** | Needs a HOME Menu forwarder started with 4 cores; +0.5–1.2 FPS in the heavy spot, smoother play, clean sound |
 | Character DLC (3 extra engines) | Not yet | |
