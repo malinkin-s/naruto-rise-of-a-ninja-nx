@@ -119,3 +119,8 @@
 "0x82159340" = { }  # ptr, 16 bytes: lfs f0,116(r3) ; li r3,0 ; stfs f0,0(r4) ; blr
 "0x82531370" = { }  # gap, 8 bytes: lwz r3,12(r3) ; b 0x82532aa0
 "0x82544BE0" = { }  # gap, 8 bytes: blr
+
+[rexcrt]
+memcpy = 0x822C6320
+memset = 0x822C54E0
+memmove = 0x822C67A8

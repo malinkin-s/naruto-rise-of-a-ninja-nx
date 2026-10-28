@@ -24,6 +24,7 @@ fctiwz_inline = true
 # call. A function that reads one of them before writing it (a split piece or a funclet that uses its parent's
 # registers) must be marked share_registers: tools/read_before_write.py on the generated code lists them.
 non_volatile_as_local = true
+non_argument_as_local = true
 elide_lr_stores = true
 # Float mode (sa2-nx round 7 and its CPU round of 2026-10-12; Gemini's review, tools/gemini/tasks/cpu_codegen_steps.md):
 # on the A57 every host flush-mode switch is an `msr fpcr` (43 ns measured on this console, rex_profile.log). Moves

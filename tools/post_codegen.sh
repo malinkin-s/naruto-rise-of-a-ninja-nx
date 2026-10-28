@@ -15,9 +15,13 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 gen="$root/app/generated"
 if [ "$NARUTO_VOLATILE" != 1 ]; then
   python3 "$root/tools/pch_no_volatile.py" "$gen/default/naruto_pch.h" "$gen/ai2c/naruto_pch.h"
+  python3 "$root/tools/pch_cold_traps.py" "$gen/default/naruto_pch.h" "$gen/ai2c/naruto_pch.h"
+  python3 "$root/tools/pch_neon_shuffles.py" "$gen/default/naruto_pch.h" "$gen/ai2c/naruto_pch.h"
   python3 "$root/tools/loop_barriers.py" "$gen/default" "$gen/ai2c"
 fi
 python3 "$root/tools/direct_calls.py" --redo
+python3 "$root/tools/guest_cas.py" --gen "$gen/default"
+python3 "$root/tools/vec_byteswap.py" --gen "$gen/default"
 if [ "$NARUTO_NO_CARDS" != 1 ]; then
   for t in default ai2c; do python3 "$root/tools/store_cards.py" --gen "$gen/$t" --hot -; done
   flag="$gen/default/naruto_recomp.0.cpp"

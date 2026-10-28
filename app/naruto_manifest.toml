@@ -13,7 +13,7 @@ game_root = "../game"
 [entrypoint]
 file_path = "../game/default.xex"
 out_directory_path = "generated/default"
-includes = ["analysis-seeds.toml", "gap-seeds.toml", "codegen_flavor.toml"]
+includes = ["analysis-seeds.toml", "gap-seeds.toml", "non_arg_keep_default.toml", "codegen_flavor.toml"]
 
 # The game's engine logic: a guest DLL loaded with XexLoadImage (imports only XBOXKRNL/XAPILIB/LIBCMT).
 # AI2C.dll SHA-256 ed760975544e9aff2f603c284f62011d712e1fa408d0edbf7528fa534e9a0d3d, base 0x88000000.
@@ -21,7 +21,7 @@ includes = ["analysis-seeds.toml", "gap-seeds.toml", "codegen_flavor.toml"]
 guest_path = "ai2c.dll"
 file_path = "../game/AI2C.dll"
 out_directory_path = "generated/ai2c"
-includes = ["ai2c-seeds.toml", "codegen_flavor.toml", "ai2c-overrides.toml"]
+includes = ["ai2c-seeds.toml", "non_arg_keep_ai2c.toml", "codegen_flavor.toml", "ai2c-overrides.toml"]
 
 # Character DLC engines (AI2C@1/@2/@3.dll, one per session, same base 0x88000000): added once the base game boots
 # (decision 2026-10-24, NARUTO_DLC_ENGINES). Their seeds are in ai2c{1,2,3}-seeds.toml.
