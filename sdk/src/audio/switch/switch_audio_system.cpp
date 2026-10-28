@@ -252,7 +252,13 @@ bool SwitchAudioSystem::StartOutput() {
   rc = threadCreate(
       &output_->thread,
       [](void* arg) { static_cast<SwitchAudioSystem*>(arg)->OutputThreadMain(); }, this, nullptr,
-      kOutputThreadStack, kOutputThreadPriority, -2);
+      kOutputThreadStack, kOutputThreadPriority, 0);  // Pin audio pump to Core 0 away from congested Core 1
+  if (R_FAILED(rc)) {
+    rc = threadCreate(
+        &output_->thread,
+        [](void* arg) { static_cast<SwitchAudioSystem*>(arg)->OutputThreadMain(); }, this, nullptr,
+        kOutputThreadStack, kOutputThreadPriority, -2);
+  }
   if (R_FAILED(rc)) {
     REXLOG_ERROR("SwitchAudioSystem: threadCreate failed: 0x{:08X}", rc);
     output_->running = false;

@@ -166,6 +166,13 @@ bool RexSwitchSetCurrentThreadCore(int core);
 bool RexSwitchSetCurrentThreadMask(int preferred, unsigned long long mask);
 /* sa2-nx (2026-10-20): the same for another registered thread, by its pthread (Thread::native_handle()). */
 bool RexSwitchSetThreadMaskOf(void* native_handle, int preferred, unsigned long long mask);
+/*
+ * naruto-nx (2026-10-28): the cores the process was given (svcGetInfo CoreMask): 0x7 when started from hbmenu, 0xF when a
+ * forwarder asked for four cores (the fourth is shared with the system). 0x7 when it cannot be read.
+ */
+unsigned long long RexSwitchProcessCoreMask(void);
+/* Changes priority of another registered thread, by its pthread (Thread::native_handle()). */
+bool RexSwitchSetThreadPriorityOf(void* native_handle, int priority);
 
 /*
  * The real pin: besides preferring that core, it forbids the others. More dangerous than

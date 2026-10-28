@@ -62,6 +62,14 @@ std::atomic<uint32_t> g_guest_layout_gen{0};
 std::atomic<int32_t> g_guest_main_core{0};
 thread_local uint32_t t_layout_applied = 0;
 thread_local uint8_t t_guest_kind = 0;
+// naruto-nx (2026-10-28): the cores the process was given and whether the fourth is among them (a forwarder started with
+// four cores; hbmenu gives three). The fourth is shared with the system, so only the light threads go there: audio, XMA
+// and the guest thread pool. The main thread keeps core 0 (its second core becomes core 3 instead of 2, where the
+// game's drawing thread lives) and the drawing thread (T_820F02C0, ~80 % of a core) keeps core 2.
+inline uint32_t ProcessCores() { return uint32_t(RexSwitchProcessCoreMask()); }
+inline bool HasCore3() { return (ProcessCores() & 0x8) != 0; }
+inline uint32_t MainMask() { return HasCore3() ? 0x9u : 0x5u; }
+inline bool IsDrawingThread(const std::string& name) { return name.starts_with("T_820F02C0"); }
 }  // namespace
 #endif
 
@@ -76,10 +84,18 @@ void ApplyGuestCoreLayoutAtWait() {
   t_layout_applied = gen;
   if (t_guest_kind == 1) {
     const int core = g_guest_main_core.load(std::memory_order_relaxed);
-    RexSwitchSetCurrentThreadMask(core, 1ull << core);
+    const unsigned long long mask = core == 0 ? MainMask() : (core == 2 ? 0x5ull : (1ull << core));
+    RexSwitchSetCurrentThreadMask(core, mask);
   } else if (t_guest_kind == 2) {
     const uint32_t mask = g_guest_core_mask.load(std::memory_order_relaxed);
     if (mask) RexSwitchSetCurrentThreadMask(g_guest_core_preferred.load(std::memory_order_relaxed), mask);
+  } else if (t_guest_kind == 3) {
+    RexSwitchSetCurrentThreadMask(HasCore3() ? 3 : 0, ProcessCores());
+  } else if (t_guest_kind == 4) {
+    RexSwitchSetCurrentThreadMask(HasCore3() ? 3 : 2, ProcessCores());
+  } else if (t_guest_kind == 5) {
+    const uint32_t mask = g_guest_core_mask.load(std::memory_order_relaxed);
+    if (mask) RexSwitchSetCurrentThreadMask(3, mask);
   }
 #endif
 }
@@ -378,6 +394,15 @@ namespace {
 // before Create().
 int SwitchPriorityFor(bool guest_thread, std::string_view name) {
   if (guest_thread) {
+    // High-priority guest audio & streaming threads (Xbox 360 priorities 16-17)
+    // T_822AA1C0: Audio XMA voice manager & refill thread (sub_822AA1C0 via CRT _beginthreadex 0x822C7700)
+    // T_82178EC8: Async I/O sound stream thread (sub_82178EC8)
+    if (name.starts_with("T_822AA1C0") || name.starts_with("T_822C7700") || name.starts_with("T_82178EC8")) {
+      return 0x2D;  // Real-time audio voice manager and async I/O streaming (above Main 0x3A and guest 0x3B)
+    }
+    if (name.starts_with("Main XThread")) {
+      return 0x3A;  // Cooperative, strictly above 0x3B guest band (naruto-nx)
+    }
     return REX_SWITCH_PRIO_GUEST;
   }
   // set_name() stores the name with the handle appended ("Audio Worker (F8000014)"),
@@ -496,6 +521,22 @@ X_STATUS XThread::Create() {
   // Always retain when starting - the thread owns itself until exited.
   RetainHandle();
 
+  // Set the thread name based on entry point or host ID before thread creation.
+  if (thread_name_.empty()) {
+    uint32_t real_start = creation_params_.start_address;
+    if (real_start == 0x822C7700 && creation_params_.start_context && memory()) {
+      const uint8_t *ptd = memory()->TranslateVirtual(creation_params_.start_context);
+      if (ptd) {
+        uint32_t raw_fn = 0;
+        std::memcpy(&raw_fn, ptd + 84, sizeof(raw_fn));
+        real_start = __builtin_bswap32(raw_fn);
+      }
+    }
+    if (real_start) {
+      set_name(fmt::format("T_{:08X}", real_start));
+    }
+  }
+
   rex::thread::Thread::CreationParameters params;
   params.stack_size = 16_MiB;  // Allocate a big host stack.
   params.create_suspended = true;
@@ -510,10 +551,36 @@ X_STATUS XThread::Create() {
     if (guest_thread_ && !main_thread_) {
       t_layout_applied = g_guest_layout_gen.load(std::memory_order_acquire);
       const uint32_t mask = g_guest_core_mask.load(std::memory_order_acquire);
-      if (mask)
+      if (thread_name_.starts_with("T_822AA1C0") || thread_name_.starts_with("T_822C7700")) {
+        // Cores 0-2 allowed, preferred Core 0 (voice manager); with four cores preferred Core 3
+        RexSwitchSetCurrentThreadMask(HasCore3() ? 3 : 0, ProcessCores());
+        t_guest_kind = 3;  // Keep audio affinity intact at waits
+      } else if (thread_name_.starts_with("T_82178EC8")) {
+        // Cores 0-2 allowed, preferred Core 2 (async I/O sound stream); with four cores preferred Core 3
+        RexSwitchSetCurrentThreadMask(HasCore3() ? 3 : 2, ProcessCores());
+        t_guest_kind = 4;  // Keep audio affinity intact at waits
+      } else if (mask && HasCore3() && !IsDrawingThread(thread_name_)) {
+        // naruto-nx: the guest thread pool and the other light guest threads live on the fourth core.
+        RexSwitchSetCurrentThreadMask(3, mask);
+        t_guest_kind = 5;
+      } else if (mask) {
         RexSwitchSetCurrentThreadMask(g_guest_core_preferred.load(std::memory_order_relaxed), mask);
+        t_guest_kind = 2;
+      } else {
+        // Made before the layout was set: it applies the layout at its first wait, as the kind says.
+        t_guest_kind = (HasCore3() && !IsDrawingThread(thread_name_)) ? 5 : 2;
+      }
+    } else if (main_thread_) {
+      // Cores 0 and 2 allowed (0 and 3 with four cores), preferred Core 0 (avoid Core 1 render thread)
+      RexSwitchSetCurrentThreadMask(0, MainMask());
+      t_guest_kind = 1;
+    } else if (!guest_thread_ && (thread_name_.starts_with("Audio Worker") || thread_name_.starts_with("XMA Decoder"))) {
+      // Cores 0-2 allowed, preferred Core 2 (offload Core 0); with four cores preferred Core 3
+      RexSwitchSetCurrentThreadMask(HasCore3() ? 3 : 2, ProcessCores());
+      t_guest_kind = 0;
+    } else {
+      t_guest_kind = guest_thread_ ? 1 : 0;
     }
-    t_guest_kind = guest_thread_ ? (main_thread_ ? 1 : 2) : 0;  // sa2-nx: ApplyGuestCoreLayoutAtWait
 #endif
     runtime::ThreadState::Bind(thread_state_.get());
 
@@ -550,7 +617,7 @@ X_STATUS XThread::Create() {
     return X_STATUS_NO_MEMORY;
   }
 
-  // Set the thread name based on host ID (for easier debugging).
+  // Fallback thread name if still empty.
   if (thread_name_.empty()) {
     set_name(fmt::format("XThread{:04X}", thread_->system_id()));
   }
@@ -929,6 +996,16 @@ void XThread::SetPriority(int32_t increment) {
   // Write priority to guest X_KTHREAD struct.
   auto kthread = guest_object<X_KTHREAD>();
   kthread->priority = static_cast<uint8_t>(std::clamp(increment, 0, 31));
+
+#if REX_PLATFORM_SWITCH
+  if (thread_ && thread_->native_handle() && guest_thread_ && !main_thread_) {
+    // Xbox 360 priorities 16-17 are realtime audio & async streaming threads.
+    // Map them to Switch priority 0x2D (above Main XThread 0x3A and guest pool 0x3B).
+    if (increment >= 16) {
+      RexSwitchSetThreadPriorityOf(thread_->native_handle(), 0x2D);
+    }
+  }
+#endif
 
   int32_t target_priority = 0;
   if (increment > 0x22) {

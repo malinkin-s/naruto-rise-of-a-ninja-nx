@@ -301,14 +301,32 @@ bool RexSwitchSetCurrentThreadCore(int core) {
   return R_SUCCEEDED(svcSetThreadCoreMask(h, core, mask));
 }
 
+unsigned long long RexSwitchProcessCoreMask(void) {
+  static const u64 mask = [] {
+    u64 m = 0;
+    if (R_FAILED(svcGetInfo(&m, InfoType_CoreMask, CUR_PROCESS_HANDLE, 0)) || (m & 0x7) == 0) return u64(0x7);
+    return m & 0xF;
+  }();
+  return mask;
+}
+
 bool RexSwitchSetThreadMaskOf(void* native_handle, int preferred, unsigned long long mask) {
   pthread_t thread;
   static_assert(sizeof(thread) == sizeof(native_handle));
   std::memcpy(&thread, &native_handle, sizeof(thread));
   const RexSwitchHandle h = RexSwitchHandleFor(thread);
-  const u64 m = u64(mask) & 0x7;
-  if (h == REX_SWITCH_INVALID_HANDLE || m == 0 || preferred < 0 || !(m & (u64(1) << preferred))) return false;
+  const u64 m = u64(mask) & RexSwitchProcessCoreMask();
+  if (h == REX_SWITCH_INVALID_HANDLE || m == 0 || (preferred >= 0 && !(m & (u64(1) << preferred)))) return false;
   return R_SUCCEEDED(svcSetThreadCoreMask(h, preferred, m));
+}
+
+bool RexSwitchSetThreadPriorityOf(void* native_handle, int priority) {
+  pthread_t thread;
+  static_assert(sizeof(thread) == sizeof(native_handle));
+  std::memcpy(&thread, &native_handle, sizeof(thread));
+  const RexSwitchHandle h = RexSwitchHandleFor(thread);
+  if (h == REX_SWITCH_INVALID_HANDLE) return false;
+  return R_SUCCEEDED(svcSetThreadPriority(h, static_cast<u32>(priority)));
 }
 
 bool RexSwitchSetCurrentThreadMask(int preferred, unsigned long long mask) {
@@ -323,8 +341,8 @@ bool RexSwitchSetCurrentThreadMask(int preferred, unsigned long long mask) {
     }
     h = CUR_THREAD_HANDLE;
   }
-  const u64 m = u64(mask) & 0x7;  // the process's three cores
-  if (m == 0 || preferred < 0 || !(m & (u64(1) << preferred))) {
+  const u64 m = u64(mask) & RexSwitchProcessCoreMask();  // the cores the process was given
+  if (m == 0 || (preferred >= 0 && !(m & (u64(1) << preferred)))) {
     return false;
   }
   return R_SUCCEEDED(svcSetThreadCoreMask(h, preferred, m));
