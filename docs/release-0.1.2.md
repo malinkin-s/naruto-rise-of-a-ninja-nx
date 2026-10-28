@@ -35,8 +35,7 @@ Namco, Microsoft or Nintendo. **The game's files are not included: you need your
 
 ## Known issues
 
-- Crashes when quitting are possible; the "Saved Game Warning" scroll border differs from the Xbox 360; the save thumbnail is
-  black in Load Game; character DLC is not supported.
+- Crashes when quitting are possible; the save thumbnail is black in Load Game; character DLC is not supported.
 - Konoha at stock clocks is about 20 FPS; sound can stutter on three cores when the frame rate drops.
 - The file range cache grows up to 1 GB with play; sessions of an hour or more have not been tested.
 
@@ -80,8 +79,7 @@ Nintendo. **Файлов игры в сборке нет: нужна своя к
 
 ## Известные проблемы
 
-- Возможны вылеты при выходе; рамка свитка «Saved Game Warning» отличается от Xbox 360; миниатюра сохранения чёрная в Load
-  Game; DLC с персонажами не поддерживается.
+- Возможны вылеты при выходе; миниатюра сохранения чёрная в Load Game; DLC с персонажами не поддерживается.
 - Коноха на стандартных частотах — около 20 FPS; на трёх ядрах звук может заикаться, когда падает частота кадров.
 - Кэш диапазонов файлов растёт до 1 ГБ по ходу игры; сеансы в час и дольше не проверялись.
 

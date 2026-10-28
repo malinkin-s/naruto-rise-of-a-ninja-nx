@@ -43,7 +43,7 @@ tools/fetch_renut_deps.sh              # plume, XenosRecomp, uam, imgui into app
 tools/codegen.sh                       # rexglue codegen app/naruto_manifest.toml + tools/post_codegen.sh (both trees)
 cmake --build out/pc -j6               # PC build (Renut on Vulkan); re-runs codegen when its inputs change
 tools/switch/build.sh [-reconfigure] [-DOPT=...]                  # dev NRO, game shaders built in: out/nx/naruto.nro
-NX_BUILD_DIR=$PWD/out/nx-release tools/switch/build.sh            # release NRO (no game shaders)
+NX_BUILD_DIR=$PWD/out/nx-release tools/switch/build.sh            # NRO without game shaders (the PGO + LTO release tree is below)
 tools/switch/package.sh [-nogame]      # out/nx/sdcard/ for the SD card
 ```
 
@@ -51,8 +51,9 @@ tools/switch/package.sh [-nogame]      # out/nx/sdcard/ for the SD card
 `NX_BUILD_DIR=$PWD/out/nx-pgo tools/switch/build.sh -reconfigure -DNARUTO_PGO=generate -DSA2_RENUT_RELEASE_SHADERS=ON` makes an
 instrumented NRO (copy `renut_gpu/host_shaders` from `out/nx-release/` into the new tree first); play it, fetch
 `/switch/naruto-nx/pgo/*.stream` over FTP, `tools/pgo_merge.sh <folder>` writes `pgo/*.gcda`, then a build with
-`-DNARUTO_PGO=use` (own tree, e.g. `out/nx-pgo-use`) uses them. `pgo/` is committed (counters only). Change no source and no
-generated code between the instrumented build and the use build.
+`-DNARUTO_PGO=use` (own tree) uses them. `pgo/` is committed (counters only). Change no source and no generated code between
+the instrumented build and the use build. **The release NRO since 0.1.3** is built in `out/nx-pgo-lto` with
+`-DNARUTO_PGO=use -DNARUTO_SWITCH_LTO=ON -DSA2_RENUT_RELEASE_SHADERS=ON` (PGO + LTO: render thread -21 % CPU at equal load).
 
 `tools/codegen.sh` variants: `NARUTO_CLASSIC=1` (generator output only), `NARUTO_VOLATILE=1` (direct calls only),
 `NARUTO_NO_CARDS=1` (skip store cards). **Any manual `rexglue codegen` must be followed by `tools/post_codegen.sh`**,

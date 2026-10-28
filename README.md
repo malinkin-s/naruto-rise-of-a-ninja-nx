@@ -15,20 +15,21 @@ The game's PowerPC code is statically recompiled with [ReXGlue](https://github.c
 emulated: Direct3D calls are drawn by Renut, a Direct3D-level renderer, on deko3d, the Switch's native graphics API.
 
 > [!IMPORTANT]
-> **[Version 0.1.2](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.2) is a test
-> build.** The story mode and fights play on a real console, but expect bugs and crashes. The game's files are not
-> included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.2)).
+> **[Version 0.1.3](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.3) is playable, and it
+> is still a test build.** The story mode and fights play on a real console; further testing is needed to find bugs,
+> crashes and so on. The game's files are not included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.3)).
 
 ## Status
 
-**Version 0.1.2, 2026-10-28.** Measured on a Nintendo Switch. Two sets of figures: stock clocks (handheld, CPU 1020 MHz,
-GPU 460 MHz; the 0.1.1 measurements, not repeated for 0.1.2) and the console overclocked by hand (CPU 1785 MHz, GPU 768 MHz).
+**Version 0.1.3, 2026-10-29.** Measured on a Nintendo Switch, handheld. Two sets of figures: stock clocks (CPU 1020 MHz,
+GPU 460 MHz; the 0.1.1 measurements, not repeated) and the console overclocked by hand (CPU 1785 MHz, GPU 768 MHz) with
+the render resolution at 480p (`sa2_render_height_handheld = 480`), which is where the game now plays well.
 
 | Area | Switch | Notes |
 |---|---|---|
 | Boot, logos, menus | **Works** | 24–29 FPS in menus |
-| Story mode (Konoha, the open world) | **Works** | stock clocks: about 20 FPS (the game's logic runs at 30). CPU 1785 / GPU 768 MHz: 27–30 FPS, the heaviest spot of the village 27–28 FPS; ground shadows fixed |
-| Fights | **Works** | stock clocks: 32–47 FPS at 1280×720, 46–58 FPS at 854×480. CPU 1785 / GPU 768 MHz: 60 FPS (the game's own rate in fights) |
+| Story mode (Konoha, the open world) | **Works** | CPU 1785 / GPU 768 MHz, 480p: about 30 FPS (the game's own rate in the open world) with rare dips, in the part of the village played so far. Stock clocks: about 20 FPS (0.1.1). Ground shadows fixed |
+| Fights | **Works** | CPU 1785 / GPU 768 MHz, 480p: 60 FPS (the game's own rate in fights) with rare dips. Stock clocks: 32–47 FPS at 1280×720, 46–58 FPS at 854×480 (0.1.1) |
 | Saves on the SD card | **Works** | Created, listed and loaded |
 | Bink video (cutscenes) | **Works** | The intro and the first story scenes; not checked through the whole game |
 | Controller | **Works** | Played by hand in the story mode |
@@ -36,14 +37,15 @@ GPU 460 MHz; the 0.1.1 measurements, not repeated for 0.1.2) and the console ove
 | Audio | Plays | With the fourth CPU core (below) no audio lag in Konoha; on three cores it stutters when the frame rate drops |
 | Fourth CPU core | **Works** | Needs a HOME Menu forwarder started with 4 cores; +0.5–1.2 FPS in the heavy spot, smoother play, clean sound |
 | Character DLC (3 extra engines) | Not yet | |
-| Known issues | | Possible crashes when quitting; the "Saved Game Warning" scroll border differs from the Xbox 360 |
+| Known issues | | Possible crashes when quitting. Playable, but it needs more testing to find bugs and crashes: please report what you meet |
 
 Performance so far: sa2-nx's enhancements, an optimised code generator (registers as locals, direct calls, guest
 memory without volatile, float-mode switches skipped), store cards for Renut's caches, a batched draw queue without
-allocations, and (new in 0.1.2) the use of a **fourth CPU core** when the game is started with four. In the open world
-all three heavy threads (the game's main thread, its drawing thread and Renut's render thread) sit at 80–95 % of a core;
-the render thread (about 34 ms a frame at the heaviest spot) is the limit. Moving its command recording to the free core
-(the experimental option `naruto_deko3d_record_worker`, off by default) was measured and is slower, +2.5 ms, so it stays off.
+allocations, the use of a **fourth CPU core** when the game is started with four (0.1.2), and, new in 0.1.3, a build
+optimised with the profile of a console session (PGO) and link-time optimisation (LTO): at the same scene load the
+render thread uses about 21 % less CPU time a frame than in the plain build of 0.1.2 (measured at 3500 draws a frame).
+The profile is in [pgo/](pgo/) (branch counters only). Moving the renderer's command recording to the free core (the
+experimental option `naruto_deko3d_record_worker`, off by default) was measured and is slower, so it stays off.
 
 #### Four CPU cores (optional)
 

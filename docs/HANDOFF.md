@@ -1,4 +1,4 @@
-# naruto-nx: handoff (2026-10-28)
+# naruto-nx: handoff (2026-10-29)
 
 Hand-off of the Naruto: Rise of a Ninja (Xbox 360) → Nintendo Switch port, written for the next agent. Read this first, then `docs/port-journal.md` (every step with its evidence and measurements) and
 `README.md`. Talk to the user in **Russian**; work in **small steps**, say before each step what you expect and how to
@@ -6,14 +6,17 @@ measure it.
 
 ## 1. Where the project is
 
-- **Released**: 0.1.2 (pre-release, 2026-10-28) — https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.2
-  (0.1.1 before it). The release holds only `naruto.nro` (no game data). Players make the game's shaders with the
-  **installer page** https://malinkin-s.github.io/naruto-nx-installer/ (repo `malinkin-s/naruto-nx-installer`, local
-  `~/Projects/naruto-nx-installer`): two files of their disc (`default.xex`, `xeshader.sdb`) in, a zip out (`naruto.nro`,
-  `deko3d_glsl.bin`, `deko3d_shaders.bin`). 0.1.2 did not change the shader package or the DKSH cache (same
-  `package_sha256` / `cache_sha256` as 0.1.1); only the manifest's `version`, `nro_sha256`, `nro_size` changed.
+- **Released**: 0.1.3 (pre-release, 2026-10-29, "playable, still a test build") — https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.3
+  (0.1.2 and 0.1.1 before it). The release holds `naruto.nro` (PGO + LTO build, with the game's icon), `naruto-nx-icon.jpg` and
+  `SHA256SUMS.txt` (no game data). Players make the game's shaders with the **installer page**
+  https://malinkin-s.github.io/naruto-nx-installer/ (repo `malinkin-s/naruto-nx-installer`, local `~/Projects/naruto-nx-installer`):
+  two files of their disc (`default.xex`, `xeshader.sdb`) in, a zip out (`naruto.nro`, `deko3d_glsl.bin`, `deko3d_shaders.bin`).
+  0.1.2 and 0.1.3 did not change the shader package or the DKSH cache (same `package_sha256` / `cache_sha256` as 0.1.1); only
+  the manifest's `version`, `nro_sha256`, `nro_size` change. **A HOME Menu forwarder NSP is not attached yet**: making one
+  needs the console's keys (an NSP is signed) or an export from Sphaira on a console; players make it in Sphaira (README).
 - **Works on the console**: boot, menus, saves, cutscenes, story mode (Konoha), fights, controller, sound.
-- **Performance**:
+- **Performance** (the user's observation for 0.1.3: CPU 1785 / GPU 768 MHz, handheld, 480p, four cores: fights 60 FPS with rare
+  dips, the open Konoha about 30 FPS with rare dips; the very heaviest spot of the village was not measured with the final build):
   - stock clocks (CPU 1020 / GPU 460.8 MHz), 0.1.1 figures, not repeated: fights 32–47 FPS at 720p, 46–58 at 480p;
     Konoha about 20 FPS at its worst spot.
   - **the console overclocked by hand (CPU 1785 / GPU 768 MHz), which is what the 30-FPS work is measured at**: the worst
@@ -94,21 +97,24 @@ the same moments).
 
 ## 5. Next steps (in this order)
 
-1. **Stage A was run and is slower** (`recA1`, 14 windows at the heaviest spot, in-session A/B target 14, 5 s halves): render thread
+1. (done, negative) **Stage A was run and is slower** (`recA1`, 14 windows at the heaviest spot, in-session A/B target 14, 5 s halves): render thread
    37.6 ms with the worker, 35.1 ms without; 26.2 vs 27.3 FPS. ≈36 thousand commands a frame are copied into the stream and the worker
    is woken ≈88 times a frame; deko3d's own recording is cheap, so the hand-over costs more than it saves. Lesson for Stage B: hand work
    over in big batches (the existing capture queue batches 32 draws), never per command, and measure the hand-over cost first.
 2. **Stage B** if A is not enough: Renut's per-draw preparation (`DrawStateLocked`, geometry, streams, constants, textures:
    ≈50–60 % of the render thread) ahead of the render thread on core 3, command recording on core 1.
-3. **PGO / clang for the whole NRO (now the most promising)** (sa2-nx PGO ≈ 15 %, mgr clang ≈ 8 %, `x360-switch-ports` SOL-CPU-1/-2/-5): the only
-   measured across-the-board CPU gain in the other ports; not tried here.
+3. **PGO + LTO is done** (0.1.3): profile `pgo/` from one 15-minute console session (3 minutes of heavy Konoha, the rest menus and
+   a fight). At equal scene load (fits of CPU ms per frame against draws per frame): render thread -13 % with PGO, -21 % with
+   PGO + LTO against the plain build (30.2 → 23.8 ms at 3500 draws a frame); `T_820F02C0` -17 %, Main -7 %. Next: a second profile
+   almost entirely in Konoha; sa2-nx's inliner parameters for a PGO build (`SA2_SWITCH_INLINE_AUTO=64`, `INLINE_UNIT_GROWTH=12`),
+   hot functions first in `.text` (`tools/hot_order.py` over console samples), clang for the game code (SOL-CPU-5).
 4. Hot guest functions of `T_820F02C0` as guarded natives (`sub_82105648`, `sub_820FD5F8`, `sub_82137E00` are ≈78 % of its
    guest samples; SOL-CPU-3).
 5. Reducing the scene (draw distance / LOD) only as a player option: at this spot cutting draws late in the render thread
    did not help (`skip1`), small draws are mixed with the HUD, and the other ports' gains came from the game's own LOD.
 6. **Sound**: with four cores there is no audio lag; on three cores it still stutters when FPS dips.
-7. Not performance: the **save thumbnail** (black on Load Game), **controls** (letter-position default, Joy-Con assist), the
-   "Saved Game Warning" scroll border. See the previous version of this section in git history for the details.
+7. Not performance: the **save thumbnail** (black on Load Game), **controls** (letter-position default, Joy-Con assist). See the
+   previous version of this section in git history for the details.
 
 How to measure: stand at the worst spot for a minute or more; compare inside one session (A/B), not between runs;
 `NX_PROFILE=1 NX_PROFILE_THREADS="renut render,Main,T_820F02C0"` and `tools/switch_profile_report.py`; per-line attribution
@@ -116,7 +122,10 @@ with `llvm-addr2line` on the run's `naruto.elf`; `--naruto_debug_census=true` lo
 
 ## 6. Releasing a new version
 
-1. Bump `VERSION` in `app/CMakeLists.txt`; build the release NRO (`NX_BUILD_DIR=$PWD/out/nx-release ...`).
+1. Bump `VERSION` in `app/CMakeLists.txt`; build the release NRO. Since 0.1.3 the release build is the PGO + LTO tree:
+   `NX_BUILD_DIR=$PWD/out/nx-pgo-lto tools/switch/build.sh -reconfigure -DNARUTO_PGO=use -DNARUTO_SWITCH_LTO=ON -DSA2_RENUT_RELEASE_SHADERS=ON`
+   (copy `renut_gpu/host_shaders` from another tree into a new one first; the profile is `pgo/`; change no source or generated
+   code since the instrumented build, see `pgo/README.md` and CLAUDE.md). Check the NRO: `ASET` header, icon, version in the NACP.
 2. Pipeline lists from new console sessions (`switch/naruto-nx/pipeline_list.bin` over FTP) into
    `data/pipeline_lists/`; variants: `python3 tools/deko3d_variant_cache.py --list data/pipeline_lists/*.bin --glsl
    <installer GLSL> --emit-variants ~/Projects/naruto-nx-installer/release/deko3d_variants.json --dry-run`.

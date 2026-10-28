@@ -431,6 +431,8 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 | 2026-10-25 | opt8: + step 3 (non_volatile_as_local, elide_lr_stores) | 1785 / 768 / 1600 (overclocked by hand) | fight vs Sasuke | 46-54 FPS | ~11 ms CPU a frame | 8-13 ms | 17-22 ms |
 | 2026-10-27 | oc_step10 (Konoha worst spot, 3 cores) | 1785 / 768 / 1600 (overclocked by hand) | Konoha, ≈4050 draws a frame | 26.6 FPS (25.5-27.5) | Swap to Swap 36.3 ms, 81 % of frames late | 34.4 ms (87 % of core 1) | 28.6 ms |
 | 2026-10-28 | prof_r1 (stack samples of 3 threads) | 1785 / 768 / 1600 | Konoha, ≈3700 draws a frame | 28-30 FPS | T_820F02C0 82 %, Main 82 % | 95 % of core 1 (sampling adds ≈4 %) | |
+| 2026-10-29 | pgoU1 (PGO, 4 cores, 480p handheld) | 1785 / 768 / 1600 | Konoha heaviest spot, 18 windows | 28.67 FPS (27.8-30.0) | Swap to Swap 32.2 ms, 31 % late | 33.96 ms busy (29.9 ms CPU) | 28.75 ms |
+| 2026-10-29 | pgoL1 (PGO + LTO, 4 cores) | 1785 / 768 / 1600 | Konoha, running around (up to 3550 draws a frame) | 30.1 FPS below 3500 draws | | CPU 23.8 ms a frame at 3500 draws (plain 30.2, PGO 26.4) | |
 | 2026-10-28 | recA1 (4 cores, record worker switched on/off every 5 s) | 1785 / 768 / 1600 | Konoha heaviest spot, 14 windows | on 26.19 / off 27.31 FPS | | on 37.62 / off 35.14 ms | on 29.00 / off 28.82 ms |
 | 2026-10-28 | four1 (HOME forwarder, 4 cores, SDK layout of 0.1.2) | 1785 / 768 / 1600 | Konoha, run around the village | 27.8-29.5 FPS at 3800-3900 draws (3 cores: 26.8-27.2); 29-30 below 3400 draws | Swap to Swap 33.0-34.4 ms | 34.0 ms (94 % of core 1) | 27.7-28.2 ms |
 
@@ -466,4 +468,9 @@ Decisions:
 
 Open questions: PGO / clang for the whole NRO (the other ports' only measured across-the-board CPU gain); is a batched hand-over of
 the draw preparation (stage B) cheaper than what it moves?
+
+Decision 2026-10-29: the release build is PGO (profile `pgo/`, 15-minute console session) + LTO (`NARUTO_PGO=use`,
+`NARUTO_SWITCH_LTO=ON`), from sa2-nx's road (SOL-CPU-1/-2). At equal scene load the render thread uses 21 % less CPU than the
+plain build; no fault in 5.8 minutes of play with the PGO build and about 6 with PGO + LTO. A HOME Menu forwarder NSP is not
+shipped: an NSP is signed with the console's keys; players make it in Sphaira (README).
 

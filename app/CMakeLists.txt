@@ -204,5 +204,6 @@ if(REXGLUE_PLATFORM_SWITCH)
     rexglue_switch_add_nro(naruto
         NAME "Naruto: Rise of a Ninja"
         AUTHOR "malinkin-s"
-        VERSION "0.1.2")
+        VERSION "0.1.3"
+        ICON "${CMAKE_CURRENT_SOURCE_DIR}/icon.jpg")
 endif()
