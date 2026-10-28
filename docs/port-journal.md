@@ -431,6 +431,7 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
 | 2026-10-25 | opt8: + step 3 (non_volatile_as_local, elide_lr_stores) | 1785 / 768 / 1600 (overclocked by hand) | fight vs Sasuke | 46-54 FPS | ~11 ms CPU a frame | 8-13 ms | 17-22 ms |
 | 2026-10-27 | oc_step10 (Konoha worst spot, 3 cores) | 1785 / 768 / 1600 (overclocked by hand) | Konoha, ≈4050 draws a frame | 26.6 FPS (25.5-27.5) | Swap to Swap 36.3 ms, 81 % of frames late | 34.4 ms (87 % of core 1) | 28.6 ms |
 | 2026-10-28 | prof_r1 (stack samples of 3 threads) | 1785 / 768 / 1600 | Konoha, ≈3700 draws a frame | 28-30 FPS | T_820F02C0 82 %, Main 82 % | 95 % of core 1 (sampling adds ≈4 %) | |
+| 2026-10-28 | recA1 (4 cores, record worker switched on/off every 5 s) | 1785 / 768 / 1600 | Konoha heaviest spot, 14 windows | on 26.19 / off 27.31 FPS | | on 37.62 / off 35.14 ms | on 29.00 / off 28.82 ms |
 | 2026-10-28 | four1 (HOME forwarder, 4 cores, SDK layout of 0.1.2) | 1785 / 768 / 1600 | Konoha, run around the village | 27.8-29.5 FPS at 3800-3900 draws (3 cores: 26.8-27.2); 29-30 below 3400 draws | Swap to Swap 33.0-34.4 ms | 34.0 ms (94 % of core 1) | 27.7-28.2 ms |
 
 ## Konoha 30 FPS hunt, 2026-10-27/28 (details: docs/konoha-optimization-log.md, stage 11)
@@ -460,9 +461,9 @@ Decisions:
 | Date | Decision | Alternatives considered | Why |
 |---|---|---|---|
 | 2026-10-28 | Use the fourth core when the process has it (SDK reads the core mask; audio, XMA and the guest pool prefer core 3; main thread cores 0 and 3, drawing thread 2, render thread 1). Three-core behaviour unchanged. | A custom loader descriptor in the NRO; staying on three cores (mass-effect-nx declined it as a system change). | nfscarbon-nx measured lost audio blocks 59-179 → 0 on the same kind of load; here no audio lag, +0.5-1.2 FPS. Needs a forwarder; the user chose it. |
-| 2026-10-28 | Stage A: banjo's record worker for deko3d (`naruto_deko3d_record_worker`, default off). | Stage B (split of the draw preparation), PGO, scene reduction. | Safest use of the free core: moves plume's deko3d recording (≈9-10 % of the render thread) with the same commands in the same order. Not run on the console yet. |
+| 2026-10-28 | Stage A: banjo's record worker for deko3d (`naruto_deko3d_record_worker`, default off). **Measured (`recA1`): render thread +2.5 ms, 26.2 vs 27.3 FPS; kept off.** | Stage B (split of the draw preparation), PGO, scene reduction. | Safest use of the free core on paper: moves plume's deko3d recording (≈9-10 % of the render thread) with the same commands in the same order. On the console the hand-over (≈36 k commands and ≈88 wake-ups a frame) costs more than deko3d's cheap recording saves. |
 | 2026-10-28 | Do not cut draws (micro meshes, distance) as a CPU fix for now. | The other agent's step 11. | `skip1`; HUD shares the shaders; no per-draw price. |
 
-Open questions: does stage A reach ≈31 ms on the render thread (A/B target 14 inside one session)? Is the worker's copy of
-the shared constants always equal to the renderer's at each draw (no wrong textures)? PGO / clang for the game code?
+Open questions: PGO / clang for the whole NRO (the other ports' only measured across-the-board CPU gain); is a batched hand-over of
+the draw preparation (stage B) cheaper than what it moves?
 

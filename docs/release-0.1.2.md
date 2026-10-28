@@ -18,9 +18,10 @@ Namco, Microsoft or Nintendo. **The game's files are not included: you need your
   heavy for this game.
 - **The game's own anti-aliasing (4× MSAA) is off by default** (GPU −10–15 %, fewer dips). Set `naruto_guest_msaa_max = 0` in
   `naruto.toml` to turn it back on.
-- **Experimental, off by default: `naruto_deko3d_record_worker = true`** moves the recording of the renderer's commands to a
-  worker on another core. Written for the render thread, which is the limit in the open world; **not run on a console yet**.
-  Try it only if you want to help test; report what you see.
+- **Experimental, off by default, not recommended: `naruto_deko3d_record_worker = true`** moves the recording of the renderer's commands
+  to a worker on the fourth core. Measured on a console (four cores, CPU 1785 / GPU 768 MHz, the heaviest spot of Konoha, switched on and
+  off every 5 s in one session): the render thread takes 37.6 ms with it and 35.1 ms without, 26.2 vs 27.3 FPS. The deko3d recording is
+  cheap, and copying ≈36 thousand commands a frame to the worker costs more than it saves. Kept for experiments.
 
 ## Installation
 
@@ -63,9 +64,10 @@ Nintendo. **Файлов игры в сборке нет: нужна своя к
   слишком тяжело.
 - **Сглаживание самой игры (4× MSAA) по умолчанию выключено** (GPU −10–15%, меньше просадок). Чтобы вернуть, поставьте
   `naruto_guest_msaa_max = 0` в `naruto.toml`.
-- **Экспериментально, по умолчанию выключено: `naruto_deko3d_record_worker = true`** переносит запись команд рендерера на
-  рабочий поток на другом ядре. Сделано для render thread, который в открытом мире является пределом; **на консоли ещё не
-  запускалось**. Включайте, только если хотите помочь с проверкой, и напишите, что увидели.
+- **Экспериментально, по умолчанию выключено, не рекомендуется: `naruto_deko3d_record_worker = true`** переносит запись команд
+  рендерера на рабочий поток на четвёртом ядре. Измерено на консоли (4 ядра, CPU 1785 / GPU 768 МГц, самое тяжёлое место Конохи,
+  включение и выключение каждые 5 с в одном сеансе): render thread 37.6 мс с ним и 35.1 мс без него, 26.2 против 27.3 FPS. Запись
+  команд deko3d дешёвая, а копирование ≈36 тысяч команд на кадр воркеру стоит дороже, чем экономит. Оставлено для экспериментов.
 
 ## Установка
 

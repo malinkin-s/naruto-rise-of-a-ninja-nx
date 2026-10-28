@@ -42,8 +42,8 @@ Performance so far: sa2-nx's enhancements, an optimised code generator (register
 memory without volatile, float-mode switches skipped), store cards for Renut's caches, a batched draw queue without
 allocations, and (new in 0.1.2) the use of a **fourth CPU core** when the game is started with four. In the open world
 all three heavy threads (the game's main thread, its drawing thread and Renut's render thread) sit at 80–95 % of a core;
-the render thread (about 34 ms a frame at the heaviest spot) is the limit. Next: moving part of its work to the free
-core (an experimental option is in 0.1.2, off by default: `naruto_deko3d_record_worker`).
+the render thread (about 34 ms a frame at the heaviest spot) is the limit. Moving its command recording to the free core
+(the experimental option `naruto_deko3d_record_worker`, off by default) was measured and is slower, +2.5 ms, so it stays off.
 
 #### Four CPU cores (optional)
 

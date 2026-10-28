@@ -26,7 +26,8 @@ measure it.
 - **Four cores** (new in 0.1.2): a HOME Menu forwarder started with 4 cores (Sphaira: CPU cores 4, address space 39-bit)
   gives the process mask 0xF; the SDK (`RexSwitchProcessCoreMask`, `sdk/src/system/xthread.cpp`) then puts audio, XMA and
   the guest pool on core 3. No audio lag, smoother play. From hbmenu the port runs on three cores as before.
-- **Experimental, off by default, never run on the console**: `naruto_deko3d_record_worker` (stage A, see below).
+- **Experimental, off by default, measured and slower** (+2.5 ms on the render thread, run `recA1`): `naruto_deko3d_record_worker`
+  (stage A, see below). Do not develop it further without a cheaper way to hand the commands over.
 
 ## 2. The user's rules (keep them)
 
@@ -93,15 +94,13 @@ the same moments).
 
 ## 5. Next steps (in this order)
 
-1. **Run stage A on the console** (written, built, not run): `naruto.toml`: `naruto_deko3d_record_worker = true`; for an
-   in-session comparison also `banjo_renut_ab_target = 14` and `banjo_renut_ab_s = 15` (the `[renut A/B]` line gives both
-   halves' FPS, render thread and GPU time). Look at the `[renut] record worker` line (lists through it, worker busy
-   time, drains) and for glitches (wrong textures, missing draws: the worker keeps its own copy of the shared constants,
-   `Deko3DSetSharedWords`; descriptor sets are bound by pointer). Expected: render thread ≈34 → ≈31 ms. Needs the 4-core
-   forwarder (the worker goes to core 3); logs of forwarder runs: `python3 tools/switch/ftp_logs.py NAME` (console FTP on).
+1. **Stage A was run and is slower** (`recA1`, 14 windows at the heaviest spot, in-session A/B target 14, 5 s halves): render thread
+   37.6 ms with the worker, 35.1 ms without; 26.2 vs 27.3 FPS. ≈36 thousand commands a frame are copied into the stream and the worker
+   is woken ≈88 times a frame; deko3d's own recording is cheap, so the hand-over costs more than it saves. Lesson for Stage B: hand work
+   over in big batches (the existing capture queue batches 32 draws), never per command, and measure the hand-over cost first.
 2. **Stage B** if A is not enough: Renut's per-draw preparation (`DrawStateLocked`, geometry, streams, constants, textures:
    ≈50–60 % of the render thread) ahead of the render thread on core 3, command recording on core 1.
-3. **PGO / clang for the game code** (sa2-nx PGO ≈ 15 %, mgr clang ≈ 8 %, `x360-switch-ports` SOL-CPU-1/-2/-5): the only
+3. **PGO / clang for the whole NRO (now the most promising)** (sa2-nx PGO ≈ 15 %, mgr clang ≈ 8 %, `x360-switch-ports` SOL-CPU-1/-2/-5): the only
    measured across-the-board CPU gain in the other ports; not tried here.
 4. Hot guest functions of `T_820F02C0` as guarded natives (`sub_82105648`, `sub_820FD5F8`, `sub_82137E00` are ≈78 % of its
    guest samples; SOL-CPU-3).
