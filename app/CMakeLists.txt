@@ -34,7 +34,6 @@ set(NARUTO_SOURCES
     src/naruto_test_exit.cpp
     src/naruto_test_shots.cpp
     src/naruto_save_thumbnail.cpp
-    src/naruto_native_hot.cpp
 )
 if(REXGLUE_PLATFORM_SWITCH)
     list(APPEND NARUTO_SOURCES src/naruto_static_modules.cpp src/naruto_no_gpu_plugin.cpp)
@@ -79,10 +78,9 @@ endif()
 # CPU step (2026-10-25, from sa2-nx's candidate 1 of 2026-10-12): the recompiled game code's `sqrt` without the errno
 # check (a compare and a branch to the C library after every fsqrt). Values are unchanged: nothing reads errno.
 # Not -fno-trapping-math: it may move a float operation across the code's flush-mode switches (sa2-nx's audit).
-# naruto target is included to prevent "attribute mismatch" blocking LTO inlining with recomp/natives.
 option(NARUTO_GAME_NO_MATH_ERRNO "-fno-math-errno on the recompiled game code" ON)
 if(NARUTO_GAME_NO_MATH_ERRNO AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    foreach(target naruto_recomp naruto_AI2C naruto)
+    foreach(target naruto_recomp naruto_AI2C)
         if(TARGET ${target})
             target_compile_options(${target} PRIVATE -fno-math-errno)
         endif()
@@ -188,15 +186,9 @@ if(REXGLUE_PLATFORM_SWITCH)
         # -fprofile-reorder-functions groups hot functions into .text.hot for L1i cache.
         # Note: -freorder-blocks-and-partition is omitted because AArch64 GNU as does not support
         # cross-section label subtractions between .text.hot and .text.unlikely in .eh_frame.
-        # --param=max-inline-insns-auto=64 and --param=inline-unit-growth=12 (from sa2-nx / HANDOFF §5.3):
-        # In recompiled PPC code, functions have no C++ 'inline' keyword. GCC's default auto-inline limit is 30,
-        # which rejects 86% of hot guest call sites. Raising to 64 inlines small hot helpers (41% fewer executed
-        # calls), while unit growth 12% caps cold bloat.
         set(_naruto_pgo "-fprofile-use=${_naruto_pgo_dir}" "-fprofile-prefix-path=${CMAKE_BINARY_DIR}"
                         -fprofile-correction -fno-profile-values -fprofile-partial-training
                         -fprofile-reorder-functions
-                        --param=max-inline-insns-auto=64
-                        --param=inline-unit-growth=12
                         -Wno-missing-profile -Wno-coverage-mismatch)
     elseif(NARUTO_PGO)
         message(FATAL_ERROR "NARUTO_PGO must be empty, generate or use (got ${NARUTO_PGO})")

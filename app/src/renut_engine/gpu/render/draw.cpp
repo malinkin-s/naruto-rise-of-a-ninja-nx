@@ -1930,12 +1930,11 @@ void PushFloatConstants(plume::RenderCommandList *cmd, const FloatConstants &con
       const auto *g8 = reinterpret_cast<const uint8_t *>(guest);
       auto *last8 = last.bytes + group * kConstantGroupBytes;
       auto *l8 = reinterpret_cast<uint8_t *>(lanes + k * (kConstantGroupBytes / 4));
-      const uint8x16x4_t v = vld1q_u8_x4(g8);
-      vst1q_u8_x4(last8, v);
-      vst1q_u8(l8, vrev32q_u8(v.val[0]));
-      vst1q_u8(l8 + 16, vrev32q_u8(v.val[1]));
-      vst1q_u8(l8 + 32, vrev32q_u8(v.val[2]));
-      vst1q_u8(l8 + 48, vrev32q_u8(v.val[3]));
+      for (u32 off = 0; off < kConstantGroupBytes; off += 16) {
+        uint8x16_t v = vld1q_u8(g8 + off);
+        vst1q_u8(last8 + off, v);
+        vst1q_u8(l8 + off, vrev32q_u8(v));
+      }
 #else
       std::memcpy(last.bytes + group * kConstantGroupBytes, guest, kConstantGroupBytes);
       std::memcpy(lanes + k * (kConstantGroupBytes / 4), guest, kConstantGroupBytes);
@@ -4609,8 +4608,12 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     textures_reused = header && std::memcmp(treuse.header[r], &header->Format, sizeof(treuse.header[r])) == 0;
   }
   if (textures_reused) {
-    std::memcpy(sc.texture_indices, treuse.indices, sizeof(sc.texture_indices));
-    std::memcpy(sc.sampler_indices, treuse.samplers, sizeof(sc.sampler_indices));
+    for (u32 r = 0; r < 32; ++r) {
+      sc.texture_indices[0][r] = treuse.indices[0][r];
+      sc.texture_indices[1][r] = treuse.indices[1][r];
+      sc.texture_indices[2][r] = treuse.indices[2][r];
+      sc.sampler_indices[r] = treuse.samplers[r];
+    }
     for (u32 r = 0; r < d3d::kTextureFetchSlots; ++r) {
       if (!(texture_mask & (1u << r)))
         continue;
@@ -4659,8 +4662,12 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
         if (header)
           std::memcpy(treuse.header[r], &header->Format, sizeof(treuse.header[r]));
       }
-      std::memcpy(treuse.indices, sc.texture_indices, sizeof(treuse.indices));
-      std::memcpy(treuse.samplers, sc.sampler_indices, sizeof(treuse.samplers));
+      for (u32 r = 0; r < 32; ++r) {
+        treuse.indices[0][r] = sc.texture_indices[0][r];
+        treuse.indices[1][r] = sc.texture_indices[1][r];
+        treuse.indices[2][r] = sc.texture_indices[2][r];
+        treuse.samplers[r] = sc.sampler_indices[r];
+      }
     }
   }
   if (textures_reused && targets_reuse_on)

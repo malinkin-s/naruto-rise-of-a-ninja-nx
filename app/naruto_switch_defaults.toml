@@ -12,7 +12,7 @@ log_to_file = true
 # The render resolution follows sa2_render_height_handheld / _docked (the player's naruto.toml, app/naruto_switch.toml;
 # 480 handheld for solid 30/60 FPS, 720 docked).
 sa2_gpu_render_scale = true
-sa2_render_height_handheld = 480
+sa2_render_height_handheld = 720
 sa2_render_height_docked = 720
 # Naruto uses 4x MSAA tiled rendering (1280x256, 3 tiles); depth handover is designed for 1x non-MSAA full targets only.
 banjo_deko3d_depth_handover = false
