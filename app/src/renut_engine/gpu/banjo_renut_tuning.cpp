@@ -44,6 +44,19 @@
 // here: the renderer's main thread and its background pipeline compiles.
 REXCVAR_DECLARE(int32_t, banjo_ring_core);
 REXCVAR_DECLARE(int32_t, banjo_background_compile_core);
+#if REX_PLATFORM_SWITCH
+extern "C" unsigned long long RexSwitchProcessCoreMask(void);  // sdk/src/core/threading_switch.cpp
+#endif
+
+int32_t EffectiveBackgroundCore() {
+  const int32_t core = REXCVAR_GET(banjo_background_compile_core);
+#if REX_PLATFORM_SWITCH
+  if (core == -2) {
+    return (RexSwitchProcessCoreMask() & 0x8) ? 3 : 2;
+  }
+#endif
+  return core;
+}
 REXCVAR_DECLARE(int32_t, banjo_prewarm_threads);
 // banjo-nx's renderer's NVK keys (masseffect_native_draws.cpp), applied to Renut's renderer too (ControlNvkLocked).
 REXCVAR_DECLARE(bool, banjo_gpu_nvk_draw_contract);
@@ -950,7 +963,7 @@ unsigned Deko3DUamFlags() {
     flags &= ~256u;
   return flags;
 }
-int Deko3DCompileCore() { return REXCVAR_GET(banjo_background_compile_core); }
+int Deko3DCompileCore() { return EffectiveBackgroundCore(); }
 int Deko3DCompilePriority() { return REXCVAR_GET(banjo_deko3d_compile_priority); }
 
 
@@ -1324,7 +1337,7 @@ void OnRenderThreadStart() {
 void OnBackgroundThreadStart(const char *what) {
 #if REX_PLATFORM_SWITCH
   const bool priority_ok = RexSwitchSetCurrentThreadPriorityOk(kBackgroundPriority);
-  const int32_t core = REXCVAR_GET(banjo_background_compile_core);
+  const int32_t core = EffectiveBackgroundCore();
   const bool core_ok = core < 0 || RexSwitchPinCurrentThreadToCore(int(core));
   REXLOG_INFO("[renut] {} at priority 0x{:X}{}, {} (banjo_background_compile_core)", what, kBackgroundPriority,
               priority_ok ? "" : " (NOT accepted)",
@@ -1455,7 +1468,7 @@ void OnDeviceCreated(plume::RenderDevice *device) {
   g_saver.thread = std::thread([] {
 #if REX_PLATFORM_SWITCH
     (void)RexSwitchSetCurrentThreadPriorityOk(kBackgroundPriority);
-    const int32_t core = REXCVAR_GET(banjo_background_compile_core);
+    const int32_t core = EffectiveBackgroundCore();
     if (core >= 0)
       (void)RexSwitchPinCurrentThreadToCore(int(core));
 #endif

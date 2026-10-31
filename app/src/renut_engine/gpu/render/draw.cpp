@@ -3367,7 +3367,8 @@ PipelineKey MakeKey(const GuestDevice &device, const ShaderRecord *vs, const Sha
   }
   // banjo-nx (banjo_deko3d_alpha_spec, 2026-10-18): the alpha test's function as the pixel shader's constant 903 (+1):
   // without the test (7) no compare and no discard, and the GPU tests depth before the pixel shader.
-  if (ps && banjo::renut_gpu::AlphaSpecOn())
+  // Only functions >= 6 (7 and 8) are precompiled offline in the DKSH cache; other functions keep 0 (generic runtime compare).
+  if (ps && banjo::renut_gpu::AlphaSpecOn() && alpha_test_func >= 6)
     key.alpha_func = alpha_test_func + 1;
   // banjo-nx (2026-10-20, in-run A/B targets 15 / 16): in the off half of banjo_deko3d_light_branch's or
   // banjo_deko3d_gpr32's A/B the pipelines are built without its constant (911 / 910): keys of their own (reserved

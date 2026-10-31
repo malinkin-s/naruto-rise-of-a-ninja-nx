@@ -697,10 +697,7 @@ struct PipelineList {
     const u32 size = u32(record.size());
     std::fwrite(&size, sizeof(size), 1, out);
     std::fwrite(record.data(), 1, record.size(), out);
-    std::fflush(out);
     unsynced = true;
-    if (std::chrono::steady_clock::now() - last_sync >= kListSync)
-      Sync();
   }
 };
 PipelineList g_list;

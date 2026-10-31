@@ -10,12 +10,11 @@ extern "C" uint64_t RexStoreCardsHostBytes(int) { return 0; }
 
 // Keys of banjo-nx's own native renderer (its src/me) that Renut's tuning reads too: defined here with banjo-nx's
 // defaults and descriptions.
-REXCVAR_DEFINE_INT32(banjo_background_compile_core, 2, "Banjo",
+REXCVAR_DEFINE_INT32(banjo_background_compile_core, -2, "Banjo",
                      "Native renderer: the background compile threads (pipeline prewarm, banjo_gpu_bool_spec's "
-                     "background compiles, the shader statistics copies, the shader preload) are pinned to this core, "
-                     "so together they never take more than one core from the game (their priority cannot go below "
-                     "the game threads' 0x3B on the console). -1 = not pinned (any core, as before)")
-    .range(-1, 2)
+                     "background compiles, the shader statistics copies, the shader preload) are pinned to this core "
+                     "(-2: core 3 when the process has four cores, else core 2; -1: not pinned; 0-3: specific core)")
+    .range(-2, 3)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 REXCVAR_DEFINE_BOOL(banjo_gpu_robustness_off, true, "Banjo",

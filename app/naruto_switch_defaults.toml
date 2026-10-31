@@ -18,6 +18,8 @@ sa2_render_height_docked = 720
 banjo_deko3d_depth_handover = false
 # No Naruto shader specializes on Xbox 360 boolean registers (xeshader.sdb boolMask is 0).
 banjo_gpu_bool_spec = false
+# Background compile threads on Core 3 when running on 4 cores (-2), leaving Core 2 free for T_820F02C0.
+banjo_background_compile_core = -2
 # Cap MSAA samples to 1 on Switch Tegra X1 (drops GPU render time by 15-20 %, prevents GPU stalls in open world).
 naruto_guest_msaa_max = 1
 # Maxwell Hardware Early-Z / Z-Cull: specialization constant 903 = 8 strips discard from opaque shaders.
