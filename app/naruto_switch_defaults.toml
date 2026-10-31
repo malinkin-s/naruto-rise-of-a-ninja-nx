@@ -20,6 +20,10 @@ banjo_deko3d_depth_handover = false
 banjo_gpu_bool_spec = false
 # Cap MSAA samples to 1 on Switch Tegra X1 (drops GPU render time by 15-20 %, prevents GPU stalls in open world).
 naruto_guest_msaa_max = 1
+# Maxwell Hardware Early-Z / Z-Cull: specialization constant 903 = 8 strips discard from opaque shaders.
+banjo_deko3d_alpha_spec = true
+# Skip 3 redundant tile clears in EndTiling (scene target is already cleared by BeginTiling).
+naruto_debug_tile_noclear = true
 # Spin on contested guest critical sections before falling into Horizon OS condvar / mutex wait (saves syscalls).
 kernel_critsec_spin = 150
 # Keep 14 frames in SwitchAudioSystem queue so audio never starves during brief framerate dips.
