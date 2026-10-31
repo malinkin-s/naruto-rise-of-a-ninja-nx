@@ -24,7 +24,7 @@ port=${NX_LOG_PORT:-28780}
 host=$(ip -4 route get "$NX_IP" | grep -oP 'src \K\S+')
 dir="$root/out/runs/$name"; rm -rf "$dir"; mkdir -p "$dir"
 # The run's ELF, for the console's crash reports (addresses "naruto + 0x..."): a later build would not match them.
-nro=${NX_NRO:-$root/out/nx/naruto.nro}  # NX_NRO: another build (out/nx-release/naruto.nro)
+nro=${NX_NRO:-$([ -f "$root/out/nx-pgo-lto/naruto.nro" ] && echo "$root/out/nx-pgo-lto/naruto.nro" || echo "$root/out/nx/naruto.nro")}
 cp "$(dirname "$nro")/naruto" "$dir/naruto.elf"
 started=$(date +%s)
 args=(--log_network="$host:$port" --test_exit_after_s="$secs")

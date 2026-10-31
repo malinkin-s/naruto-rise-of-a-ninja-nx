@@ -45,7 +45,9 @@ struct DeclLookupCache {
   uint32_t table = 0;
   uint32_t node = 0;
 };
-static thread_local DeclLookupCache s_decl_cache{};
+// Sub_820FD5F8 is called only from T_820F02C0 (the single D3D draw submission thread).
+// Regular static avoids slow general-dynamic __tls_get_addr calls on Nintendo Switch Horizon OS.
+static DeclLookupCache s_decl_cache{};
 
 extern "C" void __imp__sub_820FD5F8(PPCContext& __restrict, uint8_t*);
 extern "C" void __imp__sub_820F03A0(PPCContext& __restrict, uint8_t*);

@@ -12,6 +12,7 @@
  * guest objects; the host side is kept per object address, keyed by the same
  * container hash.
  */
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -535,8 +536,9 @@ void NarutoNoteDeclaration(u32 declaration_va) {
   if (!declaration_va)
     return;
   // The same declaration as this thread's previous draw (most draws): nothing to do, without the read, hash and map.
-  thread_local u32 last_va = 0;
-  if (declaration_va == last_va)
+  // Using atomic with relaxed ordering instead of thread_local eliminates __tls_get_addr on Nintendo Switch.
+  static std::atomic<u32> last_va{0};
+  if (declaration_va == last_va.load(std::memory_order_relaxed))
     return;
   const auto *words = GuestPtr<const be_u32>(declaration_va);
   if (!words || u32(words[0]) != 0x00100005u)
@@ -544,7 +546,7 @@ void NarutoNoteDeclaration(u32 declaration_va) {
   const u32 count = std::min<u32>(u32(words[0x18 / 4]), 63);
   const auto *elements = GuestPtr<const GuestVertexElement>(declaration_va + 0x34);
   const uint64_t hash = XXH3_64bits(elements, size_t(count) * sizeof(GuestVertexElement)) ^ count;
-  last_va = declaration_va;
+  last_va.store(declaration_va, std::memory_order_relaxed);
   static std::mutex mutex;
   static std::unordered_map<u32, uint64_t> seen;
   {
