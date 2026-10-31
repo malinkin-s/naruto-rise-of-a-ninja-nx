@@ -144,7 +144,7 @@ if(REXGLUE_PLATFORM_SWITCH)
     if(NARUTO_SWITCH_LTO)
         set(_naruto_lto_compile -flto -fno-fat-lto-objects)
         set(_naruto_lto_link -flto=${NARUTO_SWITCH_LTO_JOBS} -flto-partition=balanced -ffp-contract=off
-                             -fno-strict-aliasing)
+                             -fno-strict-aliasing -Wl,--sort-section,alignment)
         if(NARUTO_SWITCH_IPA_PTA)
             list(APPEND _naruto_lto_compile -fipa-pta)
             list(APPEND _naruto_lto_link -fipa-pta)
@@ -183,8 +183,12 @@ if(REXGLUE_PLATFORM_SWITCH)
         endif()
         # -fprofile-correction: the counts were taken without atomic updates while several game threads ran the same
         # code, so a few increments were lost and some blocks' counts do not add up; GCC smooths them.
+        # -fprofile-reorder-functions groups hot functions into .text.hot for L1i cache.
+        # Note: -freorder-blocks-and-partition is omitted because AArch64 GNU as does not support
+        # cross-section label subtractions between .text.hot and .text.unlikely in .eh_frame.
         set(_naruto_pgo "-fprofile-use=${_naruto_pgo_dir}" "-fprofile-prefix-path=${CMAKE_BINARY_DIR}"
                         -fprofile-correction -fno-profile-values -fprofile-partial-training
+                        -fprofile-reorder-functions
                         -Wno-missing-profile -Wno-coverage-mismatch)
     elseif(NARUTO_PGO)
         message(FATAL_ERROR "NARUTO_PGO must be empty, generate or use (got ${NARUTO_PGO})")

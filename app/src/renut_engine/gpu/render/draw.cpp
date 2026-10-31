@@ -129,6 +129,9 @@ REXCVAR_DEFINE_BOOL(sa2_renut_lean_diagnostics, true, "SA2/Renderer",
                     "alignment census) are kept only while those lines are logged (log_level info or lower), and the "
                     "draw and stream dumps' checks are made once instead of a call per draw")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(naruto_renut_sc_bitmask, true, "Naruto/Renderer",
+                    "Renut's renderer: 22-bit mask for PushSharedConstants to eliminate scalar loops and skip unmodified draws")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 REXCVAR_DECLARE(bool, sa2_renut_neon_compare);  // sa2-nx (2026-10-20): backend/queued.cpp
 
@@ -2052,6 +2055,67 @@ void PushSharedConstants(plume::RenderCommandList *cmd, const SharedConstants &s
     if (IsDeko3D())
       banjo::renut_gpu::record::Deko3DNotifyTexturesDirty(cmd);
 #endif
+    banjo::renut_gpu::CountPushedConstants(pushed_bytes, 1);
+    return;
+  }
+
+  static const bool use_bitmask = REXCVAR_GET(naruto_renut_sc_bitmask);
+  if (use_bitmask) {
+    static const bool inline_on = REXCVAR_GET(sa2_renut_inline_line_compare);
+    static const bool neon = REXCVAR_GET(sa2_renut_neon_compare);
+
+    // Bits 0..21: which lines are candidates to check (unmasked by equal_lines).
+    const u32 check_mask = (~equal_lines) & ((1u << 22) - 1u);
+    u32 diff_mask = 0;
+
+    for (u32 i = 0; i < 21; ++i) {
+      if ((check_mask >> i) & 1u) {
+        const u8 *p_held = held + i * kLine;
+        const u8 *p_now = now + i * kLine;
+        const bool diff = inline_on ? sa2::renut::Line64Differs(p_held, p_now, neon)
+                                    : (std::memcmp(p_held, p_now, kLine) != 0);
+        if (diff) {
+          diff_mask |= (1u << i);
+        }
+      }
+    }
+    // Tail line 21 (16 bytes: 1360 - 21 * 64 = 16)
+    if ((check_mask >> 21) & 1u) {
+      uint64_t h0, h1, n0, n1;
+      std::memcpy(&h0, held + 21 * kLine, 8);
+      std::memcpy(&h1, held + 21 * kLine + 8, 8);
+      std::memcpy(&n0, now + 21 * kLine, 8);
+      std::memcpy(&n1, now + 21 * kLine + 8, 8);
+      if ((h0 ^ n0) | (h1 ^ n1)) {
+        diff_mask |= (1u << 21);
+      }
+    }
+
+    if (diff_mask != 0) {
+#if defined(PLUME_DEKO3D)
+      if (IsDeko3D() && (diff_mask & kTextureLines))
+        banjo::renut_gpu::record::Deko3DNotifyTexturesDirty(cmd);
+#endif
+      u32 mask = diff_mask;
+      u32 line_offset = 0;
+      while (mask != 0) {
+        const u32 skip = __builtin_ctz(mask);
+        mask >>= skip;
+        line_offset += skip;
+        const u32 run_len = __builtin_ctz(~mask);
+        const u32 start_line = line_offset;
+        const u32 end_line = start_line + run_len;
+        const u32 at = start_line * kLine;
+        const u32 bytes = (end_line == 22) ? (kSize - at) : (run_len * kLine);
+
+        banjo::renut_gpu::record::Deko3DPushUniform(cmd, ubo, kSize, at, now + at, bytes);
+        std::memcpy(held + at, now + at, bytes);
+        pushed_bytes += bytes;
+
+        line_offset += run_len;
+        mask >>= run_len;
+      }
+    }
   } else {
     for (u32 at = 0; at < kSize;) {
       const u32 n = std::min(kLine, kSize - at);
