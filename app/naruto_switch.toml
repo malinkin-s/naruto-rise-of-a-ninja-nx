@@ -4,7 +4,7 @@
 # Render resolution (height): 480, 720 or 1080. Lower is faster, higher is sharper. The image always fills the screen.
 # Разрешение рендера (высота): 480, 720 или 1080. Меньше — быстрее, больше — чётче. Картинка всегда на весь экран.
 #   Handheld / портатив (GPU 460 MHz): 720 = fights 32-47 FPS, 480 = 46-58 FPS (fights run at 60, the village at 30).
-sa2_render_height_handheld = 720
+sa2_render_height_handheld = 480
 #   Docked / в доке (GPU 768 MHz): 1080 is too heavy for this game.
 sa2_render_height_docked = 720
 
