@@ -45,13 +45,37 @@ struct DeclLookupCache {
   uint32_t table = 0;
   uint32_t node = 0;
 };
+// 4-entry MRU cache: handles alternating mesh sequences without hash/list traversal.
 // Sub_820FD5F8 is called only from T_820F02C0 (the single D3D draw submission thread).
-// Regular static avoids slow general-dynamic __tls_get_addr calls on Nintendo Switch Horizon OS.
-static DeclLookupCache s_decl_cache{};
+static DeclLookupCache s_decl_cache[4]{};
+static uint32_t s_decl_hand = 0;
 
 extern "C" void __imp__sub_820FD5F8(PPCContext& __restrict, uint8_t*);
 extern "C" void __imp__sub_820F03A0(PPCContext& __restrict, uint8_t*);
 extern "C" void __imp__sub_820FA098(PPCContext& __restrict, uint8_t*);
+
+// Fast-path: checks if stream state already matches in device registers, eliding the call to sub_820FA098.
+inline void BindStreamFast(uint8_t* base, uint32_t stream_idx, uint32_t stream_arg, PPCContext& ctx) {
+  constexpr uint32_t kDeviceState = 0x82C170D8;
+  const uint32_t r29 = stream_arg ? Load32(base, stream_arg + 32) : 0;
+  const uint32_t r28 = stream_arg ? Load32(base, stream_arg + 36) : 0;
+  const uint32_t r27 = stream_arg ? Load32(base, stream_arg + 44) : 0;
+
+  const uint32_t off2107 = (stream_idx + 2107) * 4;
+  const uint32_t off2111 = (stream_idx + 2111) * 4;
+  const uint32_t off2109 = (stream_idx + 2109) * 4;
+
+  if (Load32(base, kDeviceState + off2107) == r29 &&
+      Load32(base, kDeviceState + off2111) == r27 &&
+      Load32(base, kDeviceState + off2109) == r28) {
+    return;
+  }
+
+  ctx.r3.u64 = kDeviceState;
+  ctx.r4.u64 = stream_idx;
+  ctx.r5.u64 = stream_arg;
+  __imp__sub_820FA098(ctx, base);
+}
 
 }  // namespace
 
@@ -70,10 +94,14 @@ REX_HOOK_RAW(sub_820FD5F8) {
   const uint32_t r30_flags = Load32(base, r30_u32 + 8);
   if (!(r30_flags & 0x80000u)) {
     uint32_t node = 0;
-    if (s_decl_cache.key == r30_u32 && s_decl_cache.table == table_base &&
-        s_decl_cache.node != 0 && Load32(base, s_decl_cache.node) == r30_u32) {
-      node = s_decl_cache.node;
-    } else {
+    for (int i = 0; i < 4; ++i) {
+      if (s_decl_cache[i].key == r30_u32 && s_decl_cache[i].table == table_base &&
+          s_decl_cache[i].node != 0 && Load32(base, s_decl_cache[i].node) == r30_u32) {
+        node = s_decl_cache[i].node;
+        break;
+      }
+    }
+    if (node == 0) {
       uint32_t h = (r30_u32 >> 6) ^ r30_u32;
       h = (h >> 6) ^ r30_u32;
       h = ((h >> 12) ^ h) & 0x3Fu;
@@ -86,9 +114,8 @@ REX_HOOK_RAW(sub_820FD5F8) {
         }
         curr = Load32(base, curr + 12);
       }
-      s_decl_cache.key = r30_u32;
-      s_decl_cache.table = table_base;
-      s_decl_cache.node = node;
+      s_decl_cache[s_decl_hand & 3] = {r30_u32, table_base, node};
+      s_decl_hand++;
     }
     Store32(base, table_base + 296, node);
   }
@@ -117,24 +144,18 @@ REX_HOOK_RAW(sub_820FD5F8) {
     __imp__sub_820F03A0(ctx, base);
   }
 
-  // 4. Stream bindings via sub_820FA098
+  // 4. Stream bindings via BindStreamFast (skips sub_820FA098 if streams already match)
   const uint32_t stream_count = Load32(base, r30_u32 + 24);
   uint32_t stream_idx = 0;
   if (static_cast<int32_t>(stream_count) > 0) {
     const uint32_t stream_ptrs = r30_u32 + 16;
     for (; stream_idx < stream_count; ++stream_idx) {
       const uint32_t stream_arg = Load32(base, stream_ptrs + stream_idx * 4);
-      ctx.r3.u64 = kDeviceState;
-      ctx.r4.u64 = stream_idx;
-      ctx.r5.u64 = stream_arg;
-      __imp__sub_820FA098(ctx, base);
+      BindStreamFast(base, stream_idx, stream_arg, ctx);
     }
   }
   for (; stream_idx < 2; ++stream_idx) {
-    ctx.r3.u64 = kDeviceState;
-    ctx.r4.u64 = stream_idx;
-    ctx.r5.u64 = 0;
-    __imp__sub_820FA098(ctx, base);
+    BindStreamFast(base, stream_idx, 0, ctx);
   }
 
   // 5. Tail update and indirect vtable call
