@@ -13,6 +13,16 @@ sa2_render_height_docked = 720
 # что включает аппаратный ранний Z-тест (Early-Z) и Z-Cull на архитектуре NVIDIA Maxwell GM20B (Tegra X1).
 banjo_deko3d_alpha_spec = true
 
+# Отключение бесполезной специализации булевых регистров (в Наруто нет шейдеров с булевыми масками;
+# предотвращает компиляцию 280+ лишних конвейеров на лету, убирая статтеры и 100% пики на ядрах CPU).
+banjo_gpu_bool_spec = false
+
+# Спин-блокировка критических секций (150 циклов перед падением в тяжелый системный вызов ядра Horizon OS).
+kernel_critsec_spin = 150
+
+# Отключение передачи буфера глубины без копирования (в Наруто 4x MSAA тайловый рендер, depth handover рассчитан на 1x).
+banjo_deko3d_depth_handover = false
+
 # Пропуск 3 избыточных ClearTargets после Resolve тайлов сцены в EndTiling (сцена уже очищается в BeginTiling).
 naruto_debug_tile_noclear = true
 
