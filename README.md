@@ -15,21 +15,20 @@ The game's PowerPC code is statically recompiled with [ReXGlue](https://github.c
 emulated: Direct3D calls are drawn by Renut, a Direct3D-level renderer, on deko3d, the Switch's native graphics API.
 
 > [!IMPORTANT]
-> **[Version 0.1.3](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.3) is playable, and it
+> **[Version 0.1.4](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.4) is playable, and it
 > is still a test build.** The story mode and fights play on a real console; further testing is needed to find bugs,
-> crashes and so on. The game's files are not included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.3)).
+> crashes and so on. The game's files are not included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.4)).
 
 ## Status
 
-**Version 0.1.3, 2026-10-29.** Measured on a Nintendo Switch, handheld. Two sets of figures: stock clocks (CPU 1020 MHz,
-GPU 460 MHz; the 0.1.1 measurements, not repeated) and the console overclocked by hand (CPU 1785 MHz, GPU 768 MHz) with
-the render resolution at 480p (`sa2_render_height_handheld = 480`), which is where the game now plays well.
+**Version 0.1.4, 2026-11-02.** Measured on a Nintendo Switch, handheld mode. Tested on stock clocks (CPU 1020 MHz,
+GPU 460 MHz, RAM 1600 MHz) at native 720p resolution.
 
 | Area | Switch | Notes |
 |---|---|---|
 | Boot, logos, menus | **Works** | 24–29 FPS in menus |
-| Story mode (Konoha, the open world) | **Works** | CPU 1785 / GPU 768 MHz, 480p: about 30 FPS (the game's own rate in the open world) with rare dips, in the part of the village played so far. Stock clocks: about 20 FPS (0.1.1). Ground shadows fixed |
-| Fights | **Works** | CPU 1785 / GPU 768 MHz, 480p: 60 FPS (the game's own rate in fights) with rare dips. Stock clocks: 32–47 FPS at 1280×720, 46–58 FPS at 854×480 (0.1.1) |
+| Story mode (Konoha, the open world) | **Works** | **25–30 FPS on stock clocks (1020/460 MHz) at native 720p**. Draw calls reduced by ~1,400/frame via actor and modular geometry culling. Render thread CPU time dropped to ~19.6 ms. Bottleneck shifted to GPU fillrate in wide village vistas |
+| Fights | **Works** | 60 FPS (480p) / 32–47 FPS (stock 720p, 0.1.1 baseline; not re-tested in 0.1.4) |
 | Saves on the SD card | **Works** | Created, listed and loaded |
 | Bink video (cutscenes) | **Works** | The intro and the first story scenes; not checked through the whole game |
 | Controller | **Works** | Played by hand in the story mode |
@@ -41,11 +40,10 @@ the render resolution at 480p (`sa2_render_height_handheld = 480`), which is whe
 
 Performance so far: sa2-nx's enhancements, an optimised code generator (registers as locals, direct calls, guest
 memory without volatile, float-mode switches skipped), store cards for Renut's caches, a batched draw queue without
-allocations, the use of a **fourth CPU core** when the game is started with four (0.1.2), and, new in 0.1.3, a build
-optimised with the profile of a console session (PGO) and link-time optimisation (LTO): at the same scene load the
-render thread uses about 21 % less CPU time a frame than in the plain build of 0.1.2 (measured at 3500 draws a frame).
-The profile is in [pgo/](pgo/) (branch counters only). Moving the renderer's command recording to the free core (the
-experimental option `naruto_deko3d_record_worker`, off by default) was measured and is slower, so it stays off.
+allocations, the use of a **fourth CPU core** when the game is started with four (0.1.2), PGO + LTO build optimizations (0.1.3),
+and, **new in 0.1.4**, world geometry distance culling (saving ~1,400 draw calls/frame, reducing render thread busy time
+from ~34.8 ms to ~19.68 ms with robust skydome protection). In heavy open-vista spots, the primary bottleneck has now shifted
+from CPU Core 1 to GPU fillrate (~39.5 ms GPU frame time at 460 MHz).
 
 #### HOME Menu forwarder and the fourth CPU core (recommended)
 

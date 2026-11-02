@@ -527,6 +527,243 @@ BANJO_RENUT_HOOK_RAW(sub_820F5348) {  // the game's pixel shader object from xes
   NarutoRegisterShader(ctx, base, true);
 }
 
+// ---------------------------------------------------------------------------
+// naruto-nx: MRU cache for Jade Engine shader key lookups (sub_820F5A80 for VS, sub_820F5B68 for PS).
+// The key object in r4 has vtable at +0 and 64-bit shader key at +8.
+// A thread-local MRU cache avoids recurring binary tree / map searches in guest code on every draw call.
+// ---------------------------------------------------------------------------
+REX_EXTERN(__imp__sub_820F5A80);
+REX_EXTERN(__imp__sub_820F5B68);
+
+namespace {
+struct ShaderLookupEntry {
+  u32 dict = 0;
+  u64 key = 0;
+  u32 wrapper = 0;
+};
+}  // namespace
+
+BANJO_RENUT_HOOK_RAW(sub_820F5A80) {
+  const u32 dict = ctx.r3.u32;
+  const u32 key_obj = ctx.r4.u32;
+  if (!key_obj) {
+    __imp__sub_820F5A80(ctx, base);
+    return;
+  }
+  const auto *pk = GuestPtr<const be_u64>(key_obj + 8);
+  const u64 key = pk ? u64(*pk) : 0;
+  thread_local ShaderLookupEntry cache[1024]{};
+  const u32 slot = u32(((key ^ (key >> 32)) * 0x9E3779B97F4A7C15ull) >> 54);
+  ShaderLookupEntry &e = cache[slot];
+  if (e.dict == dict && e.key == key && e.wrapper != 0) {
+    ctx.r3.u64 = e.wrapper;
+    return;
+  }
+  __imp__sub_820F5A80(ctx, base);
+  if (ctx.r3.u32) {
+    e = {dict, key, ctx.r3.u32};
+  }
+}
+
+BANJO_RENUT_HOOK_RAW(sub_820F5B68) {
+  const u32 dict = ctx.r3.u32;
+  const u32 key_obj = ctx.r4.u32;
+  if (!key_obj) {
+    __imp__sub_820F5B68(ctx, base);
+    return;
+  }
+  const auto *pk = GuestPtr<const be_u64>(key_obj + 8);
+  const u64 key = pk ? u64(*pk) : 0;
+  thread_local ShaderLookupEntry cache[1024]{};
+  const u32 slot = u32(((key ^ (key >> 32)) * 0x9E3779B97F4A7C15ull) >> 54);
+  ShaderLookupEntry &e = cache[slot];
+  if (e.dict == dict && e.key == key && e.wrapper != 0) {
+    ctx.r3.u64 = e.wrapper;
+    return;
+  }
+  __imp__sub_820F5B68(ctx, base);
+  if (ctx.r3.u32) {
+    e = {dict, key, ctx.r3.u32};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// naruto-nx: Native C++ implementations of D3D9 & Jade Engine hot shader/matrix/resource routines on Core 2.
+// Avoids emulated AltiVec unaligned lvlx/lvrx/vperm/vmsum4fp128 loops and redundant store-card marking on D3DDevice
+// and stack temporaries.
+// ---------------------------------------------------------------------------
+
+// D3DDevice_SetVertexShaderConstantF internal (r3=dev, r4=start_reg, r5=src_va, r6=vec4_count, r7=dirty_mask)
+BANJO_RENUT_HOOK_RAW(sub_821315C0) {
+  const u32 dev = ctx.r3.u32;
+  const u32 start_reg = ctx.r4.u32;
+  const u32 src_va = ctx.r5.u32;
+  const u32 count = ctx.r6.u32;
+  if (count) {
+    std::memcpy(base + dev + ((start_reg + 120u) << 4), base + src_va, count * 16u);
+  }
+  auto *pending = reinterpret_cast<be_u64 *>(base + dev);
+  *pending = u64(*pending) | ctx.r7.u64;
+}
+
+// D3DDevice_SetPixelShaderConstantF internal (r3=dev, r4=start_reg, r5=src_va, r6=vec4_count, r7=dirty_mask)
+BANJO_RENUT_HOOK_RAW(sub_821316A8) {
+  const u32 dev = ctx.r3.u32;
+  const u32 start_reg = ctx.r4.u32;
+  const u32 src_va = ctx.r5.u32;
+  const u32 count = ctx.r6.u32;
+  if (count) {
+    std::memcpy(base + dev + ((start_reg + 376u) << 4), base + src_va, count * 16u);
+  }
+  auto *pending = reinterpret_cast<be_u64 *>(base + dev + 8);
+  *pending = u64(*pending) | ctx.r7.u64;
+}
+
+// XMMatrixTranspose (r3=dst_va, r4=src_va)
+BANJO_RENUT_HOOK_RAW(sub_822DF688) {
+  const u32 dst_va = ctx.r3.u32;
+  u32 m[16];
+  std::memcpy(m, base + ctx.r4.u32, 64);
+  const u32 out[16] = {
+      m[0], m[4], m[8],  m[12],
+      m[1], m[5], m[9],  m[13],
+      m[2], m[6], m[10], m[14],
+      m[3], m[7], m[11], m[15],
+  };
+  std::memcpy(base + dst_va, out, 64);
+  if (dst_va - ctx.r1.u32 >= 0x10000u) {
+    base[dst_va >> 12] = 0;
+    base[(dst_va + 63u) >> 12] = 0;
+  }
+}
+
+// XMMatrixMultiply (r3=dst_va, r4=a_va, r5=b_va)
+BANJO_RENUT_HOOK_RAW(sub_822DF4F8) {
+  const u32 dst_va = ctx.r3.u32;
+  const auto *pa = reinterpret_cast<const be_f32 *>(base + ctx.r4.u32);
+  const auto *pb = reinterpret_cast<const be_f32 *>(base + ctx.r5.u32);
+  float a[4][4], b[4][4];
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      a[i][j] = float(pa[i * 4 + j]);
+      b[i][j] = float(pb[i * 4 + j]);
+    }
+  }
+  be_f32 out[16];
+  for (int i = 0; i < 4; ++i) {
+    const float a0 = a[i][0], a1 = a[i][1], a2 = a[i][2], a3 = a[i][3];
+    out[i * 4 + 0] = a0 * b[0][0] + a1 * b[1][0] + a2 * b[2][0] + a3 * b[3][0];
+    out[i * 4 + 1] = a0 * b[0][1] + a1 * b[1][1] + a2 * b[2][1] + a3 * b[3][1];
+    out[i * 4 + 2] = a0 * b[0][2] + a1 * b[1][2] + a2 * b[2][2] + a3 * b[3][2];
+    out[i * 4 + 3] = a0 * b[0][3] + a1 * b[1][3] + a2 * b[2][3] + a3 * b[3][3];
+  }
+  std::memcpy(base + dst_va, out, 64);
+  if (dst_va - ctx.r1.u32 >= 0x10000u) {
+    base[dst_va >> 12] = 0;
+    base[(dst_va + 63u) >> 12] = 0;
+  }
+}
+
+// Jade VS vec4 constant setter (r3=shader_obj, r4=slot, r5=src_va, r6=vec4_count)
+BANJO_RENUT_HOOK_RAW(sub_821017C8) {
+  const u32 shader_obj = ctx.r3.u32;
+  const u32 slot = ctx.r4.u32;
+  const u32 src_va = ctx.r5.u32;
+  const int32_t max_count = int32_t(*reinterpret_cast<const be_u32 *>(base + shader_obj + ((slot + 34u) << 2)));
+  const int32_t count = std::min<int32_t>(ctx.r6.s32, max_count);
+  const u32 mgr = *reinterpret_cast<const be_u32 *>(base + 0x82C0F008u);
+  const u32 dev = *reinterpret_cast<const be_u32 *>(base + mgr + 16u);
+  const int32_t start_reg = int16_t(*reinterpret_cast<const be_u16 *>(base + shader_obj + ((slot + 4u) << 1)));
+  const u32 first_group = u32(start_reg) >> 2;
+  const u32 last_group = u32(start_reg + count - 1) >> 2;
+  const u32 diff = std::min<u32>((last_group - first_group) & 0x7Fu, 0x3Fu);
+  const u64 srad = u64(int64_t(0x8000000000000000ull) >> diff);
+  const u64 mask = (first_group & 0x40u) ? 0ull : (srad >> (first_group & 0x3Fu));
+  if (count > 0) {
+    std::memcpy(base + dev + ((u32(start_reg) + 120u) << 4), base + src_va, u32(count) * 16u);
+  }
+  auto *pending = reinterpret_cast<be_u64 *>(base + dev);
+  *pending = u64(*pending) | mask;
+}
+
+// Jade VS scalar float array constant setter (r3=shader_obj, r4=slot, r5=src_va, r6=count)
+BANJO_RENUT_HOOK_RAW(sub_82101828) {
+  const u32 shader_obj = ctx.r3.u32;
+  const u32 slot = ctx.r4.u32;
+  const u32 src_va = ctx.r5.u32;
+  const int32_t max_count = int32_t(*reinterpret_cast<const be_u32 *>(base + shader_obj + ((slot + 34u) << 2)));
+  const int32_t count = std::min<int32_t>(ctx.r6.s32, max_count);
+  if (count <= 0)
+    return;
+  const u32 mgr = *reinterpret_cast<const be_u32 *>(base + 0x82C0F008u);
+  const u32 dev = *reinterpret_cast<const be_u32 *>(base + mgr + 16u);
+  const int32_t base_reg = int16_t(*reinterpret_cast<const be_u16 *>(base + shader_obj + ((slot + 4u) << 1)));
+  u64 mask = 0;
+  for (int32_t i = 0; i < count; ++i) {
+    const u32 reg = u32(base_reg + i);
+    u32 raw_float = 0;
+    std::memcpy(&raw_float, base + src_va + u32(i) * 4u, 4);
+    u32 vec4[4] = {raw_float, 0, 0, 0};
+    std::memcpy(base + dev + ((reg + 120u) << 4), vec4, 16);
+    const u32 group = reg >> 2;
+    if (!(group & 0x40u))
+      mask |= 0x8000000000000000ull >> (group & 0x3Fu);
+  }
+  auto *pending = reinterpret_cast<be_u64 *>(base + dev);
+  *pending = u64(*pending) | mask;
+}
+
+// Jade PS scalar float constant setter (r3=shader_obj, r4=slot, f1=value)
+BANJO_RENUT_HOOK_RAW(sub_821018E0) {
+  const u32 shader_obj = ctx.r3.u32;
+  const u32 slot = ctx.r4.u32;
+  const u32 mgr = *reinterpret_cast<const be_u32 *>(base + 0x82C0F008u);
+  const u32 dev = *reinterpret_cast<const be_u32 *>(base + mgr + 16u);
+  const u32 reg = u32(int32_t(int16_t(*reinterpret_cast<const be_u16 *>(base + shader_obj + ((slot + 4u) << 1)))));
+  const be_f32 val(float(ctx.f1.f64));
+  u32 vec4[4] = {0, 0, 0, 0};
+  std::memcpy(&vec4[0], &val, 4);
+  std::memcpy(base + dev + ((reg + 376u) << 4), vec4, 16);
+  const u32 group = reg >> 2;
+  if (!(group & 0x40u)) {
+    auto *pending = reinterpret_cast<be_u64 *>(base + dev + 8u);
+    *pending = u64(*pending) | (0x8000000000000000ull >> (group & 0x3Fu));
+  }
+}
+
+// Jade resource ID lookup (called 8x per material in sub_82105648)
+BANJO_RENUT_HOOK_RAW(sub_820F2990) {
+  const u32 obj = ctx.r3.u32;
+  const u32 id = ctx.r4.u32;
+  if (ctx.r4.s32 == -1) {
+    ctx.r3.u64 = 0;
+    return;
+  }
+  if (id & 0x8000u) {
+    const u32 idx = *reinterpret_cast<const be_u32 *>(base + obj + (((id & 0x7FFFu) + 405u) << 2));
+    const u32 mgr = *reinterpret_cast<const be_u32 *>(base + 0x82C0F008u);
+    const u32 p1 = *reinterpret_cast<const be_u32 *>(base + mgr + 536u);
+    const u32 p2 = *reinterpret_cast<const be_u32 *>(base + p1 + 32u);
+    ctx.r3.u64 = u32(*reinterpret_cast<const be_u32 *>(base + p2 + (idx << 2)));
+    return;
+  }
+  if ((id & 0x1000000u) == 0x1000000u) {
+    const u32 off = (id << 2) & 0x3FFFFFCu;
+    const u32 mgr = *reinterpret_cast<const be_u32 *>(base + 0x82C0F008u);
+    const u32 p1 = *reinterpret_cast<const be_u32 *>(base + mgr + 536u);
+    const u32 p2 = *reinterpret_cast<const be_u32 *>(base + p1 + 32u);
+    ctx.r3.u64 = u32(*reinterpret_cast<const be_u32 *>(base + p2 + off));
+    return;
+  }
+  const u32 count = *reinterpret_cast<const be_u32 *>(base + obj + 4u);
+  if (count <= id) {
+    ctx.r3.u64 = 0;
+    return;
+  }
+  const u32 arr = *reinterpret_cast<const be_u32 *>(base + obj);
+  ctx.r3.u64 = u32(*reinterpret_cast<const be_u32 *>(base + arr + (id << 2)));
+}
+
 // naruto-nx (2026-10-24): Naruto's vertex declarations, registered lazily from the object itself (the draw hooks call
 // this with the bound declaration, device +11812, before queuing the draw). Naruto's D3DVertexDeclaration (XDK 6274),
 // read from live objects: Common 0x00100005 (type 5), the element count at +0x18 and the D3DVERTEXELEMENT9 array
@@ -534,9 +771,10 @@ BANJO_RENUT_HOOK_RAW(sub_820F5348) {  // the game's pixel shader object from xes
 void NarutoNoteDeclaration(u32 declaration_va) {
   if (!declaration_va)
     return;
-  // The same declaration as this thread's previous draw (most draws): nothing to do, without the read, hash and map.
-  thread_local u32 last_va = 0;
-  if (declaration_va == last_va)
+  // 64-entry direct-mapped cache: avoids repeated XXH3 hashing and mutex contention across all scene vertex declarations.
+  thread_local u32 seen_va[64]{};
+  const u32 slot = (declaration_va >> 5) & 63u;
+  if (seen_va[slot] == declaration_va)
     return;
   const auto *words = GuestPtr<const be_u32>(declaration_va);
   if (!words || u32(words[0]) != 0x00100005u)
@@ -544,7 +782,7 @@ void NarutoNoteDeclaration(u32 declaration_va) {
   const u32 count = std::min<u32>(u32(words[0x18 / 4]), 63);
   const auto *elements = GuestPtr<const GuestVertexElement>(declaration_va + 0x34);
   const uint64_t hash = XXH3_64bits(elements, size_t(count) * sizeof(GuestVertexElement)) ^ count;
-  last_va = declaration_va;
+  seen_va[slot] = declaration_va;
   static std::mutex mutex;
   static std::unordered_map<u32, uint64_t> seen;
   {

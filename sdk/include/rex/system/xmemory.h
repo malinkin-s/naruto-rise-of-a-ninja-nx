@@ -72,9 +72,17 @@ extern u8* g_store_cards;
 
 inline void MarkStoreCardsAt(u8* cards, u32 guest_address, u32 length) noexcept {
   if (!cards || !length) return;
+  const u32 first = guest_address >> 12;
   const uint64_t end = uint64_t(guest_address) + length - 1;
   const u32 last = end > 0xFFFFFFFFull ? 0xFFFFFu : u32(end >> 12);
-  for (u32 page = guest_address >> 12; page <= last; ++page) cards[page] = 0;
+  cards[first] = 0;
+  if (first != last) {
+    if (last == first + 1) {
+      cards[last] = 0;
+    } else {
+      std::memset(&cards[first + 1], 0, last - first);
+    }
+  }
 }
 
 inline void MarkStoreCards(u32 guest_address, u32 length) noexcept {

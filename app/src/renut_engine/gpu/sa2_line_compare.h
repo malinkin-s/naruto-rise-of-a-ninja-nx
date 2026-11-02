@@ -39,4 +39,29 @@ inline bool Line64Differs(const uint8_t *a, const uint8_t *b, bool neon) {
   return Line64DiffersPlain(a, b);
 }
 
+inline bool Line64DiffersAndCopy(const uint8_t *a, uint8_t *shadow, uint8_t *to, bool neon) {
+#if defined(__aarch64__)
+  if (neon) {
+    const uint8x16x4_t x = vld1q_u8_x4(a);
+    const uint8x16x4_t y = vld1q_u8_x4(shadow);
+    const uint8x16_t d = vorrq_u8(vorrq_u8(veorq_u8(x.val[0], y.val[0]), veorq_u8(x.val[1], y.val[1])),
+                                  vorrq_u8(veorq_u8(x.val[2], y.val[2]), veorq_u8(x.val[3], y.val[3])));
+    if (vmaxvq_u32(vreinterpretq_u32_u8(d)) != 0) {
+      vst1q_u8_x4(shadow, x);
+      vst1q_u8_x4(to, x);
+      return true;
+    }
+    return false;
+  }
+#else
+  (void)neon;
+#endif
+  if (Line64DiffersPlain(a, shadow)) {
+    std::memcpy(shadow, a, 64);
+    std::memcpy(to, a, 64);
+    return true;
+  }
+  return false;
+}
+
 }  // namespace sa2::renut

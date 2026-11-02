@@ -132,6 +132,10 @@ REXCVAR_DEFINE_BOOL(sa2_renut_lean_diagnostics, true, "SA2/Renderer",
 REXCVAR_DEFINE_BOOL(naruto_renut_sc_bitmask, true, "Naruto/Renderer",
                     "Renut's renderer: 22-bit mask for PushSharedConstants to eliminate scalar loops and skip unmodified draws")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(naruto_renut_draw_fastpath, true, "Naruto/Renderer",
+                    "Renut's renderer: skip redundant target, texture, viewport, shader and PSO lookups on consecutive "
+                    "draws where device state outside float constants did not change (foliage / submesh fastpath)")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 REXCVAR_DECLARE(bool, sa2_renut_neon_compare);  // sa2-nx (2026-10-20): backend/queued.cpp
 
@@ -1930,11 +1934,12 @@ void PushFloatConstants(plume::RenderCommandList *cmd, const FloatConstants &con
       const auto *g8 = reinterpret_cast<const uint8_t *>(guest);
       auto *last8 = last.bytes + group * kConstantGroupBytes;
       auto *l8 = reinterpret_cast<uint8_t *>(lanes + k * (kConstantGroupBytes / 4));
-      for (u32 off = 0; off < kConstantGroupBytes; off += 16) {
-        uint8x16_t v = vld1q_u8(g8 + off);
-        vst1q_u8(last8 + off, v);
-        vst1q_u8(l8 + off, vrev32q_u8(v));
-      }
+      const uint8x16x4_t v = vld1q_u8_x4(g8);
+      vst1q_u8_x4(last8, v);
+      vst1q_u8(l8, vrev32q_u8(v.val[0]));
+      vst1q_u8(l8 + 16, vrev32q_u8(v.val[1]));
+      vst1q_u8(l8 + 32, vrev32q_u8(v.val[2]));
+      vst1q_u8(l8 + 48, vrev32q_u8(v.val[3]));
 #else
       std::memcpy(last.bytes + group * kConstantGroupBytes, guest, kConstantGroupBytes);
       std::memcpy(lanes + k * (kConstantGroupBytes / 4), guest, kConstantGroupBytes);
@@ -4345,6 +4350,98 @@ bool SameTargets(const Targets &a, const Targets &b) {
   return true;
 }
 
+static bool CheckFurShellDraw(const DrawCall &call, const void *vs, const void *ps, bool portrait, uint32_t every) {
+  struct ShellPart {
+    uint64_t frame = 0;
+    const void *vs = nullptr, *ps = nullptr;
+    u32 start_index = 0, start_vertex = 0, count = 0;
+    i32 base_vertex = 0;
+    bool indexed = false;
+    bool portrait = false;
+    u32 n = 0;
+  };
+  static ShellPart parts[64];
+  const uint64_t frame = TextureFrameLocked();
+  ShellPart *part = nullptr, *free_part = nullptr;
+  for (ShellPart &p : parts) {
+    if (p.frame != frame) {
+      if (!free_part)
+        free_part = &p;
+      continue;
+    }
+    if (p.vs == vs && p.ps == ps && p.start_index == call.start_index && p.start_vertex == call.start_vertex &&
+        p.count == call.count && p.base_vertex == call.base_vertex && p.indexed == call.indexed &&
+        p.portrait == portrait) {
+      part = &p;
+      break;
+    }
+  }
+  bool draw = true;
+  if (part) {
+    draw = ++part->n % every == 0;
+  } else if (free_part) {
+    *free_part = {frame, vs, ps, call.start_index, call.start_vertex, call.count, call.base_vertex, call.indexed,
+                  portrait, 0};
+  }
+  banjo::renut_gpu::CountFurShell(draw);
+  return draw;
+}
+
+struct TexturesReuse {
+  uint64_t seq = 0, frame = 0, epoch = 0, depth_epoch = 0;
+  u32 mask = 0;
+  const HostSurface *depth = nullptr;
+  u32 header[32][6] = {};
+  BindEffects fx[32];
+  u32 indices[3][32] = {};
+  u32 samplers[32] = {};
+};
+static TexturesReuse g_treuse;
+static uint64_t g_texture_push_seq = 0, g_texture_push_count = 0;
+
+struct KeyReuse {
+  uint64_t seq = 0;
+  const ShaderCacheEntry *vs_entry = nullptr, *ps_entry = nullptr;
+  uint64_t layout_hash = 0, surface_epoch = 0;
+  u32 primitive = 0, alpha_test_func = 0, color_count = 0;
+  bool per_instance = false;
+  int ab_off = 0;
+  HostSurface *colors[d3d::kMaxRenderTargets] = {};
+  HostSurface *depth = nullptr;
+  PipelineKey key{};
+};
+static KeyReuse g_key_reuse;
+
+struct PipelineReuse {
+  uint64_t seq = 0, lookups = 0, epoch = 0;
+  plume::RenderPipeline *pipeline = nullptr;
+};
+static PipelineReuse g_pipe_reuse;
+
+struct DrawFastPathState {
+  uint64_t seq = 0;
+  uint64_t surface_epoch = 0;
+  uint64_t texture_epoch = 0;
+  uint64_t depth_epoch = 0;
+  u32 primitive = 0;
+  u32 fetch_mask = 0;
+  u32 export_count = 0;
+  const ShaderRecord *vs = nullptr;
+  const ShaderRecord *ps = nullptr;
+  const u32 *vs_used = nullptr;
+  const u32 *ps_used = nullptr;
+  const VertexDeclarationRecord *declaration = nullptr;
+  const u32 *shader_strides = nullptr;
+  Targets targets{};
+  ViewportState viewport{};
+  PipelineKey key{};
+  plume::RenderPipeline *pipeline = nullptr;
+  SharedConstants sc{};
+  u8 rt_depth_bytes[20]{};
+  u8 tex01_bytes[8]{};
+};
+static DrawFastPathState g_fastpath;
+
 bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayConstants *replay) {
   ++g_trace_draws;
   if (!call.count)
@@ -4353,6 +4450,142 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   const GuestDevice device(device_state);
   if (!device.valid())
     return false;
+
+  static const bool fastpath_on = REXCVAR_GET(naruto_renut_draw_fastpath);
+  const ChainHint &chain = g_chain_hint;
+#if defined(PLUME_DEKO3D)
+  const bool can_pushed = IsDeko3D() && banjo::renut_gpu::PushConstantsOn() && EnsurePushedBuffers();
+#else
+  constexpr bool can_pushed = false;
+#endif
+  // Chunks 28..29 (1792..1919) hold VertexFetch[2..17] (streams 15..0).
+  // Chunks 66..67 (12416..12543, changed[1] bits 2..3) hold IndexBuffer (12428), RenderTargets/DepthStencil (12432..12451),
+  // StreamSources (12452..12515), StreamStrides (12520..12535), and Textures[0..1] (12536..12543).
+  // Allowing these chunks (while verifying the non-stream bytes in them and ensuring no command list split, clear, or
+  // resolve happened since the previous draw) lets back-to-back submesh draws with new vertex/index buffers take the fast path.
+  constexpr uint64_t kFastPathAllowed0 = (1ull << 28) | (1ull << 29);
+  constexpr uint64_t kFastPathAllowed1 = (1ull << 2) | (1ull << 3);
+  const bool can_fastpath = fastpath_on && can_pushed && chain.seq &&
+                            chain.seq == g_fastpath.seq + 1 &&
+                            s.list_open &&
+                            g_bound.generation == s.list_generation &&
+                            g_bound.layout &&
+                            g_bound.pipeline == g_fastpath.pipeline &&
+                            g_bound.framebuffer != nullptr &&
+                            g_bound.viewport_set &&
+                            g_bound.shared_words_set &&
+                            (chain.changed[0] & ~kFastPathAllowed0) == 0 &&
+                            (chain.changed[1] & ~kFastPathAllowed1) == 0 &&
+                            (!(chain.changed[1] & (1ull << 2)) ||
+                             std::memcmp(device_state + d3d::kDeviceOffsetRenderTargets, g_fastpath.rt_depth_bytes, 20) == 0) &&
+                            (!(chain.changed[1] & (1ull << 3)) ||
+                             std::memcmp(device_state + d3d::kDeviceOffsetTextures, g_fastpath.tex01_bytes, 8) == 0) &&
+                            call.primitive == g_fastpath.primitive &&
+                            !call.tessellation && call.primitive != kPointList &&
+                            g_fastpath.export_count == 0 &&
+                            g_fastpath.fetch_mask == 0 &&
+                            !AnyPendingExports() &&
+                            g_fastpath.surface_epoch == SurfaceEpochLocked() &&
+                            g_fastpath.texture_epoch == g_texture_epoch &&
+                            g_fastpath.depth_epoch == g_depth_epoch;
+  if (can_fastpath) {
+    const ShaderRecord *const vs = g_fastpath.vs;
+    const ShaderRecord *const ps = g_fastpath.ps;
+    const VertexDeclarationRecord *const declaration = g_fastpath.declaration;
+    const u32 *const shader_strides = g_fastpath.shader_strides;
+    const Targets &targets = g_fastpath.targets;
+    const PipelineKey &key = g_fastpath.key;
+
+    const auto advance_seq = [&](uint64_t new_seq) {
+      if (g_targets_reuse.seq == g_fastpath.seq)
+        g_targets_reuse.seq = new_seq;
+      if (g_viewport_reuse.seq == g_fastpath.seq)
+        g_viewport_reuse.seq = new_seq;
+      if (g_treuse.seq == g_fastpath.seq)
+        g_treuse.seq = new_seq;
+      if (g_texture_push_seq == g_fastpath.seq)
+        g_texture_push_seq = new_seq;
+      if (g_key_reuse.seq == g_fastpath.seq)
+        g_key_reuse.seq = new_seq;
+      if (g_pipe_reuse.seq == g_fastpath.seq)
+        g_pipe_reuse.seq = new_seq;
+      g_fastpath.seq = new_seq;
+    };
+
+    if (ps && NarutoDebugSkipPs(ps->hash)) {
+      advance_seq(chain.seq);
+      return true;
+    }
+    const bool portrait = targets.width <= 128 && targets.height <= 128;
+    if (const uint32_t every = portrait ? banjo::renut_gpu::PortraitFurShellEvery() : banjo::renut_gpu::FurShellEvery();
+        every > 1 && ps) {
+      const uint64_t h = ps->hash;
+      if (h == 0x2F36770769087F99ull || h == 0xC92BA80672FB9774ull || h == 0xB3C10F3D80EF61E2ull ||
+          h == 0xD40EBF0336F89333ull) {
+        if (!CheckFurShellDraw(call, vs, ps, portrait, every)) {
+          advance_seq(chain.seq);
+          return true;
+        }
+      }
+    }
+
+    Geometry geometry;
+    if (!PrepareGeometry(device, call, geometry)) {
+      g_fastpath.seq = 0;
+      return false;
+    }
+
+    const FloatConstants vs_constants = DrawFloatConstants(device_state, replay, false);
+    const FloatConstants ps_constants = DrawFloatConstants(device_state, replay, true);
+    plume::RenderCommandList *cmd = s.command_list;
+#if defined(PLUME_DEKO3D)
+    PushFloatConstants(cmd, vs_constants, g_fastpath.vs_used, g_bound.pushed_vs, vs->entry, g_pushed_buffers.address);
+    PushFloatConstants(cmd, ps_constants, g_fastpath.ps_used, g_bound.pushed_ps, ps ? ps->entry : nullptr,
+                       g_pushed_buffers.address + kPushedFloatStride);
+    g_bound.vs_constants.replay = 0;
+    g_bound.ps_constants.replay = 0;
+    banjo::renut_gpu::CountPushedConstants(1, 2);
+#endif
+
+    GpuStreams gpu_streams{};
+    if (!BindStreams(device, call, *vs, shader_strides, declaration->layout,
+                     declaration->layout_hash, geometry, gpu_streams)) {
+      g_fastpath.seq = 0;
+      return false;
+    }
+
+    for (u32 i = 0; i < targets.color_count && i < key.color_count; ++i)
+      if ((key.color_mask >> (4 * i)) & 0xF)
+        ++targets.colors[i]->writes;
+    if (targets.depth) {
+      const u32 dc = key.depth_control;
+      const bool depth_writes = (dc & 2) && (dc & 4);
+      const bool stencil_writes = (dc & 1) && ((key.stencil_ref_mask >> 16) & 0xFF) != 0;
+      if (depth_writes || stencil_writes)
+        ++targets.depth->writes;
+      if (dc & 1)
+        targets.depth->stencil_used = true;
+    }
+
+    Video::NoteDrawLocked();
+    if (geometry.indexed) {
+      SetIndexBuffer(cmd, geometry.index_view);
+      cmd->drawIndexedInstanced(geometry.index_count, geometry.instance_count, 0, 0, 0);
+    } else {
+      cmd->drawInstanced(geometry.vertex_count, geometry.instance_count, 0, 0);
+    }
+
+    advance_seq(chain.seq);
+    return true;
+  }
+
+  struct FastPathInvalidator {
+    bool armed = true;
+    ~FastPathInvalidator() {
+      if (armed)
+        g_fastpath.seq = 0;
+    }
+  } fp_guard;
 
   const u32 vs_va = device.U32(d3d::kDeviceOffsetVertexShader);
   auto *vs = FindShaderLocked(vs_va, RecordKind::VertexShader);
@@ -4453,10 +4686,15 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   // descriptor words (which GetHostSurfaceLocked reads in guest memory) are the same.
   static const bool targets_reuse_on = REXCVAR_GET(sa2_renut_chain_reuse);
   static const bool targets_verify = targets_reuse_on && REXCVAR_GET(sa2_renut_chain_reuse_verify);
-  const ChainHint &chain = g_chain_hint;
   Targets targets;
   bool targets_reused = false;
-  if (targets_reuse_on && chain.seq && chain.seq == g_targets_reuse.seq + 1 && !ChainChanged(chain, d3d::kDeviceOffsetRenderTargets, d3d::kDeviceOffsetDepthStencil + 3)  /* naruto-nx: was SA2's 12816-12835 */ &&
+  if (targets_reuse_on && chain.seq && chain.seq == g_targets_reuse.seq + 1 &&
+      (!ChainChanged(chain, d3d::kDeviceOffsetRenderTargets, d3d::kDeviceOffsetDepthStencil + 3) ||
+       (device.U32(d3d::kDeviceOffsetRenderTargets) == g_targets_reuse.va[0] &&
+        device.U32(d3d::kDeviceOffsetRenderTargets + 4) == g_targets_reuse.va[1] &&
+        device.U32(d3d::kDeviceOffsetRenderTargets + 8) == g_targets_reuse.va[2] &&
+        device.U32(d3d::kDeviceOffsetRenderTargets + 12) == g_targets_reuse.va[3] &&
+        device.U32(d3d::kDeviceOffsetDepthStencil) == g_targets_reuse.va[4])) &&
       g_targets_reuse.epoch == SurfaceEpochLocked()) {
     targets_reused = true;
     for (u32 i = 0; targets_reused && i <= d3d::kMaxRenderTargets; ++i) {
@@ -4524,40 +4762,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     const uint64_t h = ps->hash;
     if (h == 0x2F36770769087F99ull || h == 0xC92BA80672FB9774ull || h == 0xB3C10F3D80EF61E2ull ||
         h == 0xD40EBF0336F89333ull) {
-      struct ShellPart {
-        uint64_t frame = 0;
-        const void *vs = nullptr, *ps = nullptr;
-        u32 start_index = 0, start_vertex = 0, count = 0;
-        i32 base_vertex = 0;
-        bool indexed = false;
-        bool portrait = false;
-        u32 n = 0;
-      };
-      static ShellPart parts[64];
-      const uint64_t frame = TextureFrameLocked();
-      ShellPart *part = nullptr, *free_part = nullptr;
-      for (ShellPart &p : parts) {
-        if (p.frame != frame) {
-          if (!free_part)
-            free_part = &p;
-          continue;
-        }
-        if (p.vs == vs && p.ps == ps && p.start_index == call.start_index && p.start_vertex == call.start_vertex &&
-            p.count == call.count && p.base_vertex == call.base_vertex && p.indexed == call.indexed &&
-            p.portrait == portrait) {
-          part = &p;
-          break;
-        }
-      }
-      bool draw = true;
-      if (part) {
-        draw = ++part->n % every == 0;
-      } else if (free_part) {
-        *free_part = {frame, vs, ps, call.start_index, call.start_vertex, call.count, call.base_vertex, call.indexed,
-                      portrait, 0};
-      }
-      banjo::renut_gpu::CountFurShell(draw);
-      if (!draw)
+      if (!CheckFurShellDraw(call, vs, ps, portrait, every))
         return true;
     }
   }
@@ -4587,18 +4792,9 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   // memo would answer every bound slot as it did then: the device's fetch constants and texture words unchanged
   // (bytes 1152-1775, 12920-13023), the same slots, frame, texture and depth epochs and depth target, and each bound
   // texture's header words the same. The memo hit's work is done again for each slot (its transitions and counters).
-  struct TexturesReuse {
-    uint64_t seq = 0, frame = 0, epoch = 0, depth_epoch = 0;
-    u32 mask = 0;
-    const HostSurface *depth = nullptr;
-    u32 header[32][6] = {};
-    BindEffects fx[32];
-    u32 indices[3][32] = {};
-    u32 samplers[32] = {};
-  };
-  static TexturesReuse treuse;
+  TexturesReuse &treuse = g_treuse;
   bool textures_reused = targets_reuse_on && chain.seq && chain.seq == treuse.seq + 1 && treuse.mask == texture_mask &&
-                         !ChainChanged(chain, 1152, 1775) && !ChainChanged(chain, d3d::kDeviceOffsetTextures, d3d::kDeviceOffsetTextures + 4 * d3d::kTextureFetchSlots - 1)  /* naruto-nx: was SA2's 12920-13023 */ &&
+                         !ChainChanged(chain, 1152, 1775) && !ChainChanged(chain, 12544, d3d::kDeviceOffsetTextures + 4 * d3d::kTextureFetchSlots - 1)  /* naruto-nx: skip chunk 67 (stream strides share it; loop below checks all bound slots) */ &&
                          treuse.frame == TextureFrameLocked() && treuse.epoch == g_texture_epoch &&
                          treuse.depth_epoch == g_depth_epoch && treuse.depth == targets.depth;
   for (u32 r = 0; textures_reused && r < d3d::kTextureFetchSlots; ++r) {
@@ -4609,12 +4805,8 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     textures_reused = header && std::memcmp(treuse.header[r], &header->Format, sizeof(treuse.header[r])) == 0;
   }
   if (textures_reused) {
-    for (u32 r = 0; r < 32; ++r) {
-      sc.texture_indices[0][r] = treuse.indices[0][r];
-      sc.texture_indices[1][r] = treuse.indices[1][r];
-      sc.texture_indices[2][r] = treuse.indices[2][r];
-      sc.sampler_indices[r] = treuse.samplers[r];
-    }
+    std::memcpy(sc.texture_indices, treuse.indices, sizeof(sc.texture_indices));
+    std::memcpy(sc.sampler_indices, treuse.samplers, sizeof(sc.sampler_indices));
     for (u32 r = 0; r < d3d::kTextureFetchSlots; ++r) {
       if (!(texture_mask & (1u << r)))
         continue;
@@ -4663,12 +4855,8 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
         if (header)
           std::memcpy(treuse.header[r], &header->Format, sizeof(treuse.header[r]));
       }
-      for (u32 r = 0; r < 32; ++r) {
-        treuse.indices[0][r] = sc.texture_indices[0][r];
-        treuse.indices[1][r] = sc.texture_indices[1][r];
-        treuse.indices[2][r] = sc.texture_indices[2][r];
-        treuse.samplers[r] = sc.sampler_indices[r];
-      }
+      std::memcpy(treuse.indices, sc.texture_indices, sizeof(treuse.indices));
+      std::memcpy(treuse.samplers, sc.sampler_indices, sizeof(treuse.samplers));
     }
   }
   if (textures_reused && targets_reuse_on)
@@ -4885,7 +5073,8 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     } else {
       // sa2-nx (2026-10-20, sa2_renut_chain_reuse): a chain draw whose texture words are the previous draw's, when that
       // draw pushed last (no push since, the same command list's buffer): its first 512 bytes are held already.
-      static uint64_t texture_push_seq = 0, texture_push_count = 0;
+      uint64_t &texture_push_seq = g_texture_push_seq;
+      uint64_t &texture_push_count = g_texture_push_count;
       const bool texture_lines_held = textures_reused && !targets_verify && chain.seq &&
                                       texture_push_seq + 1 == chain.seq && texture_push_count == g_shared_pushes &&
                                       g_bound.pushed_shared_valid;
@@ -4923,18 +5112,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   // the clip planes, the destination, window, values and control packets), the shaders' cache entries, the
   // declaration's layout, the primitive, the instancing, the alpha test, the targets (their surfaces and the surface
   // epoch, which every target built, retired or rebound bumps) and the in-run A/B half.
-  struct KeyReuse {
-    uint64_t seq = 0;
-    const ShaderCacheEntry *vs_entry = nullptr, *ps_entry = nullptr;
-    uint64_t layout_hash = 0, surface_epoch = 0;
-    u32 primitive = 0, alpha_test_func = 0, color_count = 0;
-    bool per_instance = false;
-    int ab_off = 0;
-    HostSurface *colors[d3d::kMaxRenderTargets] = {};
-    HostSurface *depth = nullptr;
-    PipelineKey key{};
-  };
-  static KeyReuse reuse;
+  KeyReuse &reuse = g_key_reuse;
   static const bool reuse_on = REXCVAR_GET(sa2_renut_chain_reuse);
   static const bool reuse_verify = reuse_on && REXCVAR_GET(sa2_renut_chain_reuse_verify);
   const ChainHint &hint = chain;
@@ -5013,11 +5191,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     return true;
   // sa2-nx (2026-10-20, sa2_renut_chain_reuse): the previous draw's pipeline for its key again when no lookup was made
   // since and no prebuilt pipeline came in (PipelineLookupsLocked): GetPipelineLocked would answer the same.
-  struct PipelineReuse {
-    uint64_t seq = 0, lookups = 0, epoch = 0;
-    plume::RenderPipeline *pipeline = nullptr;
-  };
-  static PipelineReuse preuse;
+  PipelineReuse &preuse = g_pipe_reuse;
   plume::RenderPipeline *pipeline = nullptr;
   // The prebuild epoch read once, before the test and the lookup (found by banjo-nx's verify run): a prebuild worker
   // finishing a specialised pipeline between this draw's lookup (which returned the generic one) and a later read
@@ -5164,6 +5338,30 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   if (export_count) {
     FinishMemExportLocked(s, exports, export_count, export_offsets);
     g_bound.framebuffer = nullptr;  // the copies end any render pass
+  }
+  if (fastpath_on && chain.seq && !call.tessellation && call.primitive != kPointList &&
+      export_count == 0 && fetch_mask == 0 && pushed) {
+    g_fastpath.seq = chain.seq;
+    g_fastpath.surface_epoch = SurfaceEpochLocked();
+    g_fastpath.texture_epoch = g_texture_epoch;
+    g_fastpath.depth_epoch = g_depth_epoch;
+    g_fastpath.primitive = call.primitive;
+    g_fastpath.fetch_mask = fetch_mask;
+    g_fastpath.export_count = export_count;
+    g_fastpath.vs = vs;
+    g_fastpath.ps = ps;
+    g_fastpath.vs_used = vs_used;
+    g_fastpath.ps_used = ps_used;
+    g_fastpath.declaration = declaration;
+    g_fastpath.shader_strides = shader_strides;
+    g_fastpath.targets = targets;
+    g_fastpath.viewport = viewport;
+    g_fastpath.key = key;
+    g_fastpath.pipeline = pipeline;
+    g_fastpath.sc = sc;
+    std::memcpy(g_fastpath.rt_depth_bytes, device_state + d3d::kDeviceOffsetRenderTargets, 20);
+    std::memcpy(g_fastpath.tex01_bytes, device_state + d3d::kDeviceOffsetTextures, 8);
+    fp_guard.armed = false;
   }
   return true;
 }
@@ -5688,6 +5886,7 @@ plume::RenderRect ClampRect(const ClearRect *rect, uint32_t width, uint32_t heig
 
 void ClearStateLocked(const u8 *device_state, u32 flags, const ClearRect *rect,
                       const float color[4], float depth, u32 stencil) {
+  g_fastpath.seq = 0;
   auto &s = State();
   if (!Video::EnsureCommandListLocked())
     return;
@@ -5841,6 +6040,7 @@ void ResolveStateLocked(const u8 *device_state, u32 flags, const ClearRect *sour
                         u32 dest_texture_va, const d3d::TextureFetchConstant *dest_format,
                         i32 dest_x, i32 dest_y, u32 dest_level, u32 dest_slice,
                         const float clear_color[4], float clear_depth, u32 clear_stencil) {
+  g_fastpath.seq = 0;
   auto &s = State();
   static const uint32_t kProfileLabel = gpu_profile::Label("resolves");
   gpu_profile::Mark(s, kProfileLabel);

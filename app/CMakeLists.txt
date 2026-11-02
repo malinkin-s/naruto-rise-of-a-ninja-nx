@@ -158,6 +158,20 @@ if(REXGLUE_PLATFORM_SWITCH)
         message(STATUS "naruto: Switch LTO on (${NARUTO_SWITCH_LTO_JOBS} LTRANS jobs, -fipa-pta ${NARUTO_SWITCH_IPA_PTA})")
     endif()
 
+    # sasrt-nx / sa2-nx CPU round: no frame pointer in the game code and renderer.
+    # AArch64 GCC keeps the x29 frame chain in every non-leaf function by default (stp x29, x30 / mov x29, sp),
+    # which costs instructions and reserves x29 (callee-saved register).
+    # The SDK and the app keep theirs for backtraces in switch_perf.
+    option(NARUTO_SWITCH_OMIT_FRAME_POINTER "Game code and renderer without the x29 frame chain (Switch)" ON)
+    if(NARUTO_SWITCH_OMIT_FRAME_POINTER)
+        foreach(target naruto_recomp naruto_AI2C naruto_renut_gpu plume)
+            if(TARGET ${target})
+                target_compile_options(${target} PRIVATE -fomit-frame-pointer)
+            endif()
+        endforeach()
+        message(STATUS "naruto: -fomit-frame-pointer enabled for naruto_recomp, naruto_AI2C, naruto_renut_gpu, plume")
+    endif()
+
     # Profile-guided optimisation (sa2-nx app/CMakeLists.txt, docs/porting-guide.md 9.2; the other ports' only measured
     # across-the-board CPU gain: sa2-nx about 15 %). Three steps:
     #   NARUTO_PGO=generate  an instrumented NRO that streams its branch counts to pgo/ next to the NRO (src/naruto_pgo.cpp;
@@ -189,6 +203,8 @@ if(REXGLUE_PLATFORM_SWITCH)
         set(_naruto_pgo "-fprofile-use=${_naruto_pgo_dir}" "-fprofile-prefix-path=${CMAKE_BINARY_DIR}"
                         -fprofile-correction -fno-profile-values -fprofile-partial-training
                         -fprofile-reorder-functions
+                        --param=max-inline-insns-auto=64
+                        --param=inline-unit-growth=12
                         -Wno-missing-profile -Wno-coverage-mismatch)
     elseif(NARUTO_PGO)
         message(FATAL_ERROR "NARUTO_PGO must be empty, generate or use (got ${NARUTO_PGO})")

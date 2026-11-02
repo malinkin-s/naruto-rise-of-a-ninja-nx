@@ -19,9 +19,40 @@ if [ "$NARUTO_VOLATILE" != 1 ]; then
   python3 "$root/tools/pch_neon_shuffles.py" "$gen/default/naruto_pch.h" "$gen/ai2c/naruto_pch.h"
   python3 "$root/tools/loop_barriers.py" "$gen/default" "$gen/ai2c"
 fi
+if [ -f "$root/app/indirect_promotions.txt" ]; then
+  python3 "$root/tools/indirect_calls.py" --gen "$gen/default" --promote "$root/app/indirect_promotions.txt"
+fi
 python3 "$root/tools/direct_calls.py" --redo
 python3 "$root/tools/guest_cas.py" --gen "$gen/default"
 python3 "$root/tools/vec_byteswap.py" --gen "$gen/default"
+if [ -f "$root/out/default_image.bin" ]; then
+  python3 "$root/tools/flush_mode_flow.py" --redo --gen "$gen/default" --image "$root/out/default_image.bin"
+else
+  python3 "$root/tools/flush_mode_flow.py" --redo --gen "$gen/default"
+fi
+if [ -f "$root/out/default_image.AI2C.bin" ]; then
+  python3 "$root/tools/flush_mode_flow.py" --redo --gen "$gen/ai2c" --image "$root/out/default_image.AI2C.bin"
+else
+  python3 "$root/tools/flush_mode_flow.py" --redo --gen "$gen/ai2c"
+fi
+if [ -f "$root/out/default_image.bin" ]; then
+  python3 "$root/tools/ro_constants.py" --gen "$gen/default" --image "$root/out/default_image.bin" --xex "$root/game/default.xex"
+fi
+if [ -f "$root/out/default_image.AI2C.bin" ]; then
+  python3 "$root/tools/ro_constants.py" --gen "$gen/ai2c" --image "$root/out/default_image.AI2C.bin" --xex "$root/game/AI2C.dll"
+fi
+python3 "$root/tools/float_loads.py" --gen "$gen/default"
+python3 "$root/tools/float_loads.py" --gen "$gen/ai2c"
+python3 "$root/tools/loop_locals.py" --gen "$gen/default"
+python3 "$root/tools/loop_locals.py" --gen "$gen/ai2c"
+python3 "$root/tools/leaf_locals.py" --gen "$gen/default"
+python3 "$root/tools/leaf_locals.py" --gen "$gen/ai2c"
+python3 "$root/tools/fp_sign_ops.py" --gen "$gen/default"
+python3 "$root/tools/fp_sign_ops.py" --gen "$gen/ai2c"
+python3 "$root/tools/single_floats.py" --gen "$gen/default"
+python3 "$root/tools/single_floats.py" --gen "$gen/ai2c"
+python3 "$root/tools/flush_hoist.py" --gen "$gen/default"
+python3 "$root/tools/flush_hoist.py" --gen "$gen/ai2c"
 if [ "$NARUTO_NO_CARDS" != 1 ]; then
   for t in default ai2c; do python3 "$root/tools/store_cards.py" --gen "$gen/$t" --hot -; done
   flag="$gen/default/naruto_recomp.0.cpp"

@@ -565,12 +565,18 @@ DrawCapture *CaptureDelta(u32 device_va, const DrawCall &call) {
     for (u32 k = 0; k < list.count; ++k) {
       const u32 i = list.index[k];
       const u32 at = DeltaChunkOffset(i), size = DeltaChunkSize(i);
-      const bool differs = size == kDeltaUnitBytes ? sa2::renut::Line64Differs(bytes + at, c.shadow + at, neon)
-                                                   : std::memcmp(bytes + at, c.shadow + at, size) != 0;
+      bool differs = false;
+      if (size == kDeltaUnitBytes) {
+        differs = sa2::renut::Line64DiffersAndCopy(bytes + at, c.shadow + at, to, neon);
+      } else {
+        differs = std::memcmp(bytes + at, c.shadow + at, size) != 0;
+        if (differs) {
+          std::memcpy(c.shadow + at, bytes + at, size);
+          std::memcpy(to, bytes + at, size);
+        }
+      }
       if (!differs)
         continue;
-      std::memcpy(c.shadow + at, bytes + at, size);
-      std::memcpy(to, bytes + at, size);
       to += size;
       h.chunks[i / 64] |= uint64_t(1) << (i % 64);
       ++chunks;

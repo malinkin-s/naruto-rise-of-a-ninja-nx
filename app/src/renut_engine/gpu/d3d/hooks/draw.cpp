@@ -21,6 +21,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <rex/cvar.h>
 #include <rex/hook.h>
 
 #include "renut_engine/gpu/banjo_renut_select.h"
@@ -81,6 +82,40 @@ void StoreU32(u32 va, u32 value) {
 u32 LoadU32(u32 va) {
   const auto *p = GuestPtr<const be_u32>(va);
   return p ? u32(*p) : 0;
+}
+
+u16 LoadU16(u32 va) {
+  const auto *p = GuestPtr<const be_u16>(va);
+  return p ? u16(*p) : 0;
+}
+
+u8 LoadU8(u32 va) {
+  const auto *p = GuestPtr<const u8>(va);
+  return p ? *p : 0;
+}
+
+void StoreU8(u32 va, u8 value) {
+  if (auto *p = GuestPtr<u8>(va))
+    *p = value;
+}
+
+float LoadF32(u32 va) {
+  const auto *p = GuestPtr<const be_u32>(va);
+  if (!p)
+    return 0.0f;
+  const u32 bits = u32(*p);
+  float val = 0.0f;
+  std::memcpy(&val, &bits, sizeof(float));
+  return val;
+}
+
+void StoreF32(u32 va, float val) {
+  auto *p = GuestPtr<be_u32>(va);
+  if (!p)
+    return;
+  u32 bits = 0;
+  std::memcpy(&bits, &val, sizeof(float));
+  *p = be_u32(bits);
 }
 
 bool ReadRect(u32 va, ClearRect &rect) {
@@ -733,16 +768,50 @@ namespace {
 void NoteBoundDeclaration(u32 device) {
   NarutoNoteDeclaration(LoadU32(device + d3d::kDeviceOffsetVertexDeclaration));
 }
+
+// Diagnostic draw telemetry for Jade Engine item dispatch
+struct PerItemStats {
+  u32 item_count = 0;
+  u32 draw_count = 0;
+};
+
+struct FrameDiagTelemetry {
+  u32 frame_count = 0;
+  u32 total_items = 0;
+  u32 total_draws = 0;
+  u32 pass_items[4] = {0};
+  u32 pass_draws[4] = {0};
+  std::unordered_map<u32, PerItemStats> by_dispatch_type;
+  std::unordered_map<u32, PerItemStats> by_geom;
+  std::unordered_map<u32, PerItemStats> by_material;
+};
+
+static FrameDiagTelemetry g_diag;
+static std::mutex g_diag_mutex;
+
+static thread_local u32 tl_current_pass = 0;
+static thread_local u32 tl_draws_in_item = 0;
+static thread_local bool tl_in_item = false;
+static thread_local u32 tl_frame_items = 0;
+static thread_local u32 tl_frame_draws = 0;
+static thread_local u32 tl_pass_items[4] = {0};
+static thread_local u32 tl_pass_draws[4] = {0};
+static thread_local std::unordered_map<u32, PerItemStats> tl_by_type;
+static thread_local std::unordered_map<u32, PerItemStats> tl_by_geom;
+static thread_local std::unordered_map<u32, PerItemStats> tl_by_material;
 }  // namespace
 BANJO_RENUT_HOOK_RAW(sub_82137E00) {
+  if (tl_in_item) ++tl_draws_in_item;
   NoteBoundDeclaration(ctx.r3.u32);
   D3DDevice_DrawIndexedVertices_hook(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
 }
 BANJO_RENUT_HOOK_RAW(sub_82137A18) {
+  if (tl_in_item) ++tl_draws_in_item;
   NoteBoundDeclaration(ctx.r3.u32);
   D3DDevice_DrawVertices_hook(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
 }
 BANJO_RENUT_HOOK_RAW(sub_821375A0) {
+  if (tl_in_item) ++tl_draws_in_item;
   NoteBoundDeclaration(ctx.r3.u32);
   ctx.r3.u64 = D3DDevice_BeginVertices_hook(ctx.r3.u32, 5, 4, 20);
 }
@@ -790,5 +859,401 @@ BANJO_RENUT_HOOK_RAW(sub_8213AC80) {  // D3DDevice_EndTiling(device, resolve fla
       SetTilingExtentLocked(0, 0);
       SetTilesLocked(nullptr, 0);
     });
+  }
+}
+
+// Jade Engine render packet & item dispatch hooks
+REX_EXTERN(__imp__sub_820FC008);
+REX_EXTERN(__imp__sub_820FC2E0);
+REX_EXTERN(__imp__sub_820FD5F8);
+REX_EXTERN(__imp__sub_820FFD30);
+
+// Jade Engine culling & LOD distance hooks
+REX_EXTERN(__imp__sub_8267A2A0);
+REX_EXTERN(__imp__sub_825F1D18);
+REX_EXTERN(__imp__sub_825F18C0);
+
+REXCVAR_DEFINE_DOUBLE(naruto_view_distance_scale, 1.0, "Naruto/Performance",
+                      "View distance and LOD scale factor (1.0 = stock, 0.8 = 80%)");
+REXCVAR_DEFINE_DOUBLE(naruto_max_view_distance, 0.0, "Naruto/Performance",
+                      "Max view distance in meters (0 = disabled/scaled from 200m stock)");
+
+static std::atomic<u32> g_culling_tested{0};
+static std::atomic<u32> g_culling_frustum_culled{0};
+static std::atomic<u32> g_culling_dist_culled{0};
+static std::atomic<u32> g_culling_dist_0_50{0};
+static std::atomic<u32> g_culling_dist_50_100{0};
+static std::atomic<u32> g_culling_dist_100_150{0};
+static std::atomic<u32> g_culling_dist_150_200{0};
+static std::atomic<u32> g_culling_dist_200_plus{0};
+static std::atomic<float> g_last_lod_factor{1.0f};
+
+static std::atomic<u32> g_b5_batches_tested{0};
+static std::atomic<u32> g_b5_batches_culled{0};
+static std::atomic<u32> g_b5_items_tested{0};
+static std::atomic<u32> g_b5_items_culled{0};
+static std::atomic<u32> g_b5_dist_0_50{0};
+static std::atomic<u32> g_b5_dist_50_100{0};
+static std::atomic<u32> g_b5_dist_100_150{0};
+static std::atomic<u32> g_b5_dist_150_200{0};
+static std::atomic<u32> g_b5_dist_200_plus{0};
+static std::atomic<u32> g_b5_fail_mgr{0};
+static std::atomic<u32> g_b5_fail_matbase{0};
+static std::atomic<u32> g_b5_fail_items{0};
+
+BANJO_RENUT_HOOK_RAW(sub_8267A2A0) {
+  __imp__sub_8267A2A0(ctx, base);
+  const double scale = REXCVAR_GET(naruto_view_distance_scale);
+  const float lod_factor = LoadF32(0x826F6368);
+  g_last_lod_factor.store(lod_factor, std::memory_order_relaxed);
+
+  if (scale > 0.05 && scale < 3.0 && scale != 1.0) {
+    // sub_8267A970 compares against squared distances, so scale by scale^2
+    const float scaled_factor = lod_factor * float(scale * scale);
+    StoreF32(0x826F6368, scaled_factor);
+  }
+}
+
+BANJO_RENUT_HOOK_RAW(sub_825F1D18) {
+  __imp__sub_825F1D18(ctx, base);
+}
+
+BANJO_RENUT_HOOK_RAW(sub_825F18C0) {
+  const u32 p_max = ctx.r3.u32;
+  const u32 p_min = ctx.r4.u32;
+
+  __imp__sub_825F18C0(ctx, base);
+
+  g_culling_tested.fetch_add(1, std::memory_order_relaxed);
+
+  if (ctx.r3.u32 != 0) {
+    // Already culled by Jade's frustum planes or near plane
+    g_culling_frustum_culled.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+
+  // Object passed frustum planes. Check distance culling.
+  if (p_min < 0x10000u || p_max < 0x10000u) {
+    return;
+  }
+
+  const float x1 = LoadF32(p_min + 0);
+  const float y1 = LoadF32(p_min + 4);
+  const float z1 = LoadF32(p_min + 8);
+
+  const float x2 = LoadF32(p_max + 0);
+  const float y2 = LoadF32(p_max + 4);
+  const float z2 = LoadF32(p_max + 8);
+
+  const float cam_x = LoadF32(0x82722B70 + 48);
+  const float cam_y = LoadF32(0x82722B70 + 52);
+  const float cam_z = LoadF32(0x82722B70 + 56);
+
+  const float dir_x = LoadF32(0x82722B70 + 60);
+  const float dir_y = LoadF32(0x82722B70 + 64);
+  const float dir_z = LoadF32(0x82722B70 + 68);
+
+  const float dir_len_sq = dir_x * dir_x + dir_y * dir_y + dir_z * dir_z;
+  if (dir_len_sq < 0.001f) {
+    return;
+  }
+
+  const float inv_len = 1.0f / std::sqrt(dir_len_sq);
+  const float ndir_x = dir_x * inv_len;
+  const float ndir_y = dir_y * inv_len;
+  const float ndir_z = dir_z * inv_len;
+
+  const float min_x = std::min(x1, x2);
+  const float max_x = std::max(x1, x2);
+  const float min_y = std::min(y1, y2);
+  const float max_y = std::max(y1, y2);
+  const float min_z = std::min(z1, z2);
+  const float max_z = std::max(z1, z2);
+
+  // Pick closest corner of AABB along camera look vector (N-vertex)
+  const float nx = (ndir_x >= 0.0f) ? min_x : max_x;
+  const float ny = (ndir_y >= 0.0f) ? min_y : max_y;
+  const float nz = (ndir_z >= 0.0f) ? min_z : max_z;
+
+  // Planar distance along view axis to the closest point of the bounding box
+  const float dist = (nx - cam_x) * ndir_x + (ny - cam_y) * ndir_y + (nz - cam_z) * ndir_z;
+
+  if (dist < 50.0f) {
+    g_culling_dist_0_50.fetch_add(1, std::memory_order_relaxed);
+  } else if (dist < 100.0f) {
+    g_culling_dist_50_100.fetch_add(1, std::memory_order_relaxed);
+  } else if (dist < 150.0f) {
+    g_culling_dist_100_150.fetch_add(1, std::memory_order_relaxed);
+  } else if (dist < 200.0f) {
+    g_culling_dist_150_200.fetch_add(1, std::memory_order_relaxed);
+  } else {
+    g_culling_dist_200_plus.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  const double custom_dist = REXCVAR_GET(naruto_max_view_distance);
+  const double scale = REXCVAR_GET(naruto_view_distance_scale);
+
+  float max_dist = 0.0f;
+  if (custom_dist > 5.0) {
+    max_dist = float(custom_dist);
+  } else if (scale > 0.05 && scale < 0.999) {
+    max_dist = float(200.0 * scale);
+  }
+
+  if (max_dist > 5.0f && dist > max_dist) {
+    ctx.r3.s64 = 1;  // Cull this object beyond max_dist
+    g_culling_dist_culled.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+BANJO_RENUT_HOOK_RAW(sub_820EDC80) {
+  __imp__sub_820EDC80(ctx, base);
+}
+
+BANJO_RENUT_HOOK_RAW(sub_820FC2E0) {
+  tl_current_pass = std::min<u32>(ctx.r4.u32, 3);
+  __imp__sub_820FC2E0(ctx, base);
+}
+
+BANJO_RENUT_HOOK_RAW(sub_820FD5F8) {
+  const u32 item_va = ctx.r4.u32;
+  const u32 dispatch_type = LoadU32(item_va + 160);
+  const u32 mat_va = LoadU32(item_va + 12);
+  const u32 geom_va = LoadU32(item_va + 28);
+
+  if (dispatch_type == 5) {
+    g_b5_items_tested.fetch_add(1, std::memory_order_relaxed);
+
+    const float cam_x = LoadF32(0x82722B70 + 48);
+    const float cam_y = LoadF32(0x82722B70 + 52);
+    const float cam_z = LoadF32(0x82722B70 + 56);
+
+    const u32 scene = ctx.r3.u32;
+    const u32 matrix_idx = LoadU32(item_va + 32);
+    const u32 matrix_array = (scene >= 0x10000u) ? LoadU32(scene + 2824) : 0;
+
+    if (matrix_array >= 0x10000u && geom_va >= 0x10000u) {
+      const u32 mptr = matrix_array + matrix_idx * 64;
+      const float tx = LoadF32(mptr + 48);
+      const float ty = LoadF32(mptr + 52);
+      const float tz = LoadF32(mptr + 56);
+
+      // Only cull positioned modular geometry (avoid culling origin/root objects)
+      if (tx != 0.0f || ty != 0.0f || tz != 0.0f) {
+        // Exclude loading screens, menus and sub-world transitions where camera is outside map
+        const bool in_gameplay = (std::abs(cam_x) < 400.0f && std::abs(cam_y) < 600.0f &&
+                                  std::abs(cam_z) < 100.0f && std::abs(cam_z) > 0.5f);
+        if (in_gameplay) {
+          const float dx = tx - cam_x;
+          const float dy = ty - cam_y;
+          const float dz = tz - cam_z;
+          const float dist_sq = dx * dx + dy * dy + dz * dz;
+          const float dist = std::sqrt(dist_sq);
+
+          if (dist < 50.0f) {
+            g_b5_dist_0_50.fetch_add(1, std::memory_order_relaxed);
+          } else if (dist < 100.0f) {
+            g_b5_dist_50_100.fetch_add(1, std::memory_order_relaxed);
+          } else if (dist < 150.0f) {
+            g_b5_dist_100_150.fetch_add(1, std::memory_order_relaxed);
+          } else if (dist < 200.0f) {
+            g_b5_dist_150_200.fetch_add(1, std::memory_order_relaxed);
+          } else {
+            g_b5_dist_200_plus.fetch_add(1, std::memory_order_relaxed);
+          }
+
+          const double custom_dist = REXCVAR_GET(naruto_max_view_distance);
+          const double scale = REXCVAR_GET(naruto_view_distance_scale);
+          float max_dist = 160.0f;
+          if (custom_dist > 5.0) {
+            max_dist = float(custom_dist);
+          } else if (scale > 0.05 && scale < 0.999) {
+            max_dist = float(200.0 * scale);
+          }
+
+          // Never cull skydome, clouds or distant horizon elements!
+          const bool is_sky = (geom_va == 0x42802bb0u || geom_va == 0x41608260u ||
+                               (mat_va & 0xFFFFF000u) == 0x40FBE000u ||
+                               (mat_va & 0xFFFFF000u) == 0x40D7D000u ||
+                               tz < -300.0f);
+
+          if (!is_sky && dist > max_dist) {
+            g_b5_items_culled.fetch_add(1, std::memory_order_relaxed);
+            StoreU32(scene + 3060, 0);
+            StoreU32(scene + 320, 0);
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  tl_in_item = true;
+  tl_draws_in_item = 0;
+
+  __imp__sub_820FD5F8(ctx, base);
+
+  tl_in_item = false;
+  const u32 draws = tl_draws_in_item;
+
+  tl_frame_items++;
+  tl_frame_draws += draws;
+  tl_pass_items[tl_current_pass]++;
+  tl_pass_draws[tl_current_pass] += draws;
+
+  auto &t = tl_by_type[dispatch_type];
+  t.item_count++;
+  t.draw_count += draws;
+
+  if (geom_va) {
+    auto &g = tl_by_geom[geom_va];
+    g.item_count++;
+    g.draw_count += draws;
+  }
+  if (mat_va) {
+    auto &m = tl_by_material[mat_va];
+    m.item_count++;
+    m.draw_count += draws;
+  }
+}
+
+BANJO_RENUT_HOOK_RAW(sub_820FC008) {
+  tl_frame_items = 0;
+  tl_frame_draws = 0;
+  std::memset(tl_pass_items, 0, sizeof(tl_pass_items));
+  std::memset(tl_pass_draws, 0, sizeof(tl_pass_draws));
+  tl_by_type.clear();
+  tl_by_geom.clear();
+  tl_by_material.clear();
+
+  __imp__sub_820FC008(ctx, base);
+
+  std::lock_guard lock(g_diag_mutex);
+  g_diag.frame_count++;
+  g_diag.total_items += tl_frame_items;
+  g_diag.total_draws += tl_frame_draws;
+  for (int p = 0; p < 4; ++p) {
+    g_diag.pass_items[p] += tl_pass_items[p];
+    g_diag.pass_draws[p] += tl_pass_draws[p];
+  }
+  for (const auto &[k, v] : tl_by_type) {
+    auto &dest = g_diag.by_dispatch_type[k];
+    dest.item_count += v.item_count;
+    dest.draw_count += v.draw_count;
+  }
+  for (const auto &[k, v] : tl_by_geom) {
+    auto &dest = g_diag.by_geom[k];
+    dest.item_count += v.item_count;
+    dest.draw_count += v.draw_count;
+  }
+  for (const auto &[k, v] : tl_by_material) {
+    auto &dest = g_diag.by_material[k];
+    dest.item_count += v.item_count;
+    dest.draw_count += v.draw_count;
+  }
+
+  // Log summary every 150 frames (~5 seconds at 30 fps)
+  if (g_diag.frame_count >= 150) {
+    const float f = float(g_diag.frame_count);
+    RGPU_INFO("[naruto-diag] === 150 frames: avg {:.1f} items/fr, avg {:.1f} draws/fr ===",
+              g_diag.total_items / f, g_diag.total_draws / f);
+    RGPU_INFO("[naruto-diag]   Pass 0: {:5.1f} items, {:6.1f} draws | Pass 1: {:5.1f} items, {:6.1f} draws | Pass 2: {:5.1f} items, {:6.1f} draws",
+              g_diag.pass_items[0] / f, g_diag.pass_draws[0] / f,
+              g_diag.pass_items[1] / f, g_diag.pass_draws[1] / f,
+              g_diag.pass_items[2] / f, g_diag.pass_draws[2] / f);
+
+    // Sort dispatch types by draw calls
+    std::vector<std::pair<u32, PerItemStats>> sorted_t(g_diag.by_dispatch_type.begin(), g_diag.by_dispatch_type.end());
+    std::sort(sorted_t.begin(), sorted_t.end(), [](const auto &a, const auto &b) {
+      return a.second.draw_count > b.second.draw_count;
+    });
+    for (const auto &[type, s] : sorted_t) {
+      RGPU_INFO("[naruto-diag]   DispatchType {:2d}: {:5.1f} items/fr, {:6.1f} draws/fr ({:.1f} draws/item)",
+                type, s.item_count / f, s.draw_count / f, s.item_count ? float(s.draw_count) / s.item_count : 0.0f);
+    }
+
+    // Top 5 geoms
+    std::vector<std::pair<u32, PerItemStats>> sorted_g(g_diag.by_geom.begin(), g_diag.by_geom.end());
+    std::sort(sorted_g.begin(), sorted_g.end(), [](const auto &a, const auto &b) {
+      return a.second.draw_count > b.second.draw_count;
+    });
+    u32 top_g = std::min<u32>(sorted_g.size(), 5);
+    for (u32 i = 0; i < top_g; ++i) {
+      const auto &[g, s] = sorted_g[i];
+      RGPU_INFO("[naruto-diag]   Top Geom {:#010x}: {:4.1f} items/fr, {:5.1f} draws/fr",
+                g, s.item_count / f, s.draw_count / f);
+    }
+
+    // Top 5 materials
+    std::vector<std::pair<u32, PerItemStats>> sorted_m(g_diag.by_material.begin(), g_diag.by_material.end());
+    std::sort(sorted_m.begin(), sorted_m.end(), [](const auto &a, const auto &b) {
+      return a.second.draw_count > b.second.draw_count;
+    });
+    u32 top_m = std::min<u32>(sorted_m.size(), 5);
+    for (u32 i = 0; i < top_m; ++i) {
+      const auto &[m, s] = sorted_m[i];
+      RGPU_INFO("[naruto-diag]   Top Mat  {:#010x}: {:4.1f} items/fr, {:5.1f} draws/fr",
+                m, s.item_count / f, s.draw_count / f);
+    }
+
+    const u32 f_culled = g_culling_frustum_culled.exchange(0, std::memory_order_relaxed);
+    const u32 d_culled = g_culling_dist_culled.exchange(0, std::memory_order_relaxed);
+    const u32 tested = g_culling_tested.exchange(0, std::memory_order_relaxed);
+    const u32 d0 = g_culling_dist_0_50.exchange(0, std::memory_order_relaxed);
+    const u32 d50 = g_culling_dist_50_100.exchange(0, std::memory_order_relaxed);
+    const u32 d100 = g_culling_dist_100_150.exchange(0, std::memory_order_relaxed);
+    const u32 d150 = g_culling_dist_150_200.exchange(0, std::memory_order_relaxed);
+    const u32 d200 = g_culling_dist_200_plus.exchange(0, std::memory_order_relaxed);
+    const float lod_fact = g_last_lod_factor.load(std::memory_order_relaxed);
+    const double vdist_scale = REXCVAR_GET(naruto_view_distance_scale);
+    const double max_vdist = REXCVAR_GET(naruto_max_view_distance);
+    const float eff_max = (max_vdist > 5.0) ? float(max_vdist) : ((vdist_scale < 0.999 && vdist_scale > 0.05) ? float(200.0 * vdist_scale) : 0.0f);
+
+    const float cam_x = LoadF32(0x82722B70 + 48);
+    const float cam_y = LoadF32(0x82722B70 + 52);
+    const float cam_z = LoadF32(0x82722B70 + 56);
+    const float dir_x = LoadF32(0x82722B70 + 60);
+    const float dir_y = LoadF32(0x82722B70 + 64);
+    const float dir_z = LoadF32(0x82722B70 + 68);
+
+    RGPU_INFO("[naruto-cull] ViewDist: scale={:.2f}, MaxDist={:.1f}m, LODFactor={:.3f} | Cam: ({:.0f},{:.0f},{:.0f}) Dir: ({:.2f},{:.2f},{:.2f}) | Tested: {:4.1f}/fr | FrustumCulled: {:4.1f}/fr ({:.1f}%) | DistCulled: {:4.1f}/fr ({:.1f}%)",
+              vdist_scale, eff_max, lod_fact,
+              cam_x, cam_y, cam_z, dir_x, dir_y, dir_z,
+              tested / f,
+              f_culled / f, tested > 0 ? (100.0f * f_culled / tested) : 0.0f,
+              d_culled / f, tested > 0 ? (100.0f * d_culled / tested) : 0.0f);
+    RGPU_INFO("[naruto-cull] DistHist: <50m: {:4.1f}, 50-100m: {:4.1f}, 100-150m: {:4.1f}, 150-200m: {:4.1f}, >200m: {:4.1f}",
+              d0 / f, d50 / f, d100 / f, d150 / f, d200 / f);
+
+    const u32 b5_bt = g_b5_batches_tested.exchange(0, std::memory_order_relaxed);
+    const u32 b5_bc = g_b5_batches_culled.exchange(0, std::memory_order_relaxed);
+    const u32 b5_it = g_b5_items_tested.exchange(0, std::memory_order_relaxed);
+    const u32 b5_ic = g_b5_items_culled.exchange(0, std::memory_order_relaxed);
+    const u32 b5_d0 = g_b5_dist_0_50.exchange(0, std::memory_order_relaxed);
+    const u32 b5_d50 = g_b5_dist_50_100.exchange(0, std::memory_order_relaxed);
+    const u32 b5_d100 = g_b5_dist_100_150.exchange(0, std::memory_order_relaxed);
+    const u32 b5_d150 = g_b5_dist_150_200.exchange(0, std::memory_order_relaxed);
+    const u32 b5_d200 = g_b5_dist_200_plus.exchange(0, std::memory_order_relaxed);
+
+    const u32 b5_fm = g_b5_fail_mgr.exchange(0, std::memory_order_relaxed);
+    const u32 b5_fmb = g_b5_fail_matbase.exchange(0, std::memory_order_relaxed);
+    const u32 b5_fi = g_b5_fail_items.exchange(0, std::memory_order_relaxed);
+
+    RGPU_INFO("[naruto-cull] Batch5: Batches tested: {:4.1f}/fr, culled: {:4.1f}/fr ({:.1f}%) | Items tested: {:5.1f}/fr, culled: {:5.1f}/fr ({:.1f}%)",
+              b5_bt / f, b5_bc / f, b5_bt > 0 ? (100.0f * b5_bc / b5_bt) : 0.0f,
+              b5_it / f, b5_ic / f, b5_it > 0 ? (100.0f * b5_ic / b5_it) : 0.0f);
+    RGPU_INFO("[naruto-cull] Batch5Dist: <50m: {:4.1f}, 50-100m: {:4.1f}, 100-150m: {:4.1f}, 150-200m: {:4.1f}, >200m: {:4.1f} | Fails: mgr={:4.1f}, matbase={:4.1f}, items={:4.1f}",
+              b5_d0 / f, b5_d50 / f, b5_d100 / f, b5_d150 / f, b5_d200 / f,
+              b5_fm / f, b5_fmb / f, b5_fi / f);
+
+    // Reset
+    g_diag.frame_count = 0;
+    g_diag.total_items = 0;
+    g_diag.total_draws = 0;
+    std::memset(g_diag.pass_items, 0, sizeof(g_diag.pass_items));
+    std::memset(g_diag.pass_draws, 0, sizeof(g_diag.pass_draws));
+    g_diag.by_dispatch_type.clear();
+    g_diag.by_geom.clear();
+    g_diag.by_material.clear();
   }
 }
