@@ -936,7 +936,7 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
   sa2::render::OnPresented(game_frame);
   // sa2-nx: a lockstep recording (sa2_capture.cpp) takes this very frame: asked before it is queued.
   const uint64_t capture_ticket = sa2::capture::RenutLockstepOn() ? RequestFrameCapture() : 0;
-  renut::frame_stats::OnGameFrame();
+  renut::frame_stats::OnGameFrame(game_frame);
   rex::latency::NoteGuestSwap();  // banjo-nx (2026-10-19, input latency): the probe
   const uint64_t swap_ordinal = rex::latency::SwapCount();
   FlushDeferredVertices(device_va);

@@ -21,7 +21,9 @@ OURS = '0100915020400000'  # hbloader: the process an NRO runs in
 
 def symbolize(text, elf):
     offsets = sorted(set(re.findall(r'naruto \+ (0x[0-9a-f]+)', text)))
-    if not offsets or not os.path.isfile(elf):
+    if not offsets:
+        return text
+    if not elf or not os.path.isfile(elf):
         return text
     names = {}
     for off in offsets:

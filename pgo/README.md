@@ -7,4 +7,4 @@ streams the instrumented NRO writes (`NARUTO_PGO=generate`, `app/src/naruto_pgo.
 Files are named by the object's path in the build tree (`#` for each `/`), so they match from any build tree with the same
 layout; the few objects compiled from absolute source paths (the SDK's `rex_app.cpp` and similar, names with `home#...`) only
 match a checkout at the same path, and compile without a profile elsewhere. Change no source and no generated code between the
-instrumented build and the build that uses this profile: a changed function loses its counts. See `docs/HANDOFF.md` §6.
+instrumented build and the build that uses this profile: a changed function loses its counts. See `docs/archive/HANDOFF.md` §6.

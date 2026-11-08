@@ -13,8 +13,12 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
 #include <cstring>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
 
 #include <rex/assert.h>
+#include <rex/cvar.h>
 #include <rex/kernel/xboxkrnl/private.h>
 #include <rex/logging.h>
 #include <rex/math.h>
@@ -23,8 +27,72 @@
 #include <rex/system/kernel_state.h>
 #include <rex/system/xtypes.h>
 
+REXCVAR_DEFINE_BOOL(kernel_physical_pool, true, "Memory",
+                    "Recycle frequent physical memory allocations in a pool cache");
+REXCVAR_DEFINE_INT32(kernel_physical_pool_max_mb, 16, "Memory",
+                     "Max size of the physical allocation pool in megabytes");
+
 namespace rex::kernel::xboxkrnl {
 using namespace rex::system;
+
+namespace {
+struct PhysicalPoolBlock {
+  uint32_t addr = 0;
+  uint32_t size = 0;
+  uint32_t protect_bits = 0;
+  uint32_t alignment = 0;
+};
+
+class PhysicalMemoryPool {
+ public:
+  bool TryAlloc(uint32_t size, uint32_t protect_bits, uint32_t alignment, uint32_t* out_addr) {
+    if (!REXCVAR_GET(kernel_physical_pool)) return false;
+    std::lock_guard lock(mutex_);
+    for (size_t i = 0; i < free_blocks_.size(); ++i) {
+      const auto& b = free_blocks_[i];
+      if (b.size == size && b.protect_bits == protect_bits && (b.addr % alignment == 0)) {
+        *out_addr = b.addr;
+        allocated_blocks_[b.addr] = b;
+        total_pooled_bytes_ -= b.size;
+        free_blocks_.erase(free_blocks_.begin() + i);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void RecordAlloc(uint32_t addr, uint32_t size, uint32_t protect_bits, uint32_t alignment) {
+    if (!REXCVAR_GET(kernel_physical_pool)) return;
+    std::lock_guard lock(mutex_);
+    allocated_blocks_[addr] = {addr, size, protect_bits, alignment};
+  }
+
+  bool TryFree(uint32_t addr) {
+    if (!REXCVAR_GET(kernel_physical_pool)) return false;
+    std::lock_guard lock(mutex_);
+    auto it = allocated_blocks_.find(addr);
+    if (it == allocated_blocks_.end()) return false;
+    PhysicalPoolBlock b = it->second;
+    allocated_blocks_.erase(it);
+
+    const size_t max_bytes = size_t(std::max(1, REXCVAR_GET(kernel_physical_pool_max_mb))) * 1024 * 1024;
+    if (total_pooled_bytes_ + b.size <= max_bytes) {
+      free_blocks_.push_back(b);
+      total_pooled_bytes_ += b.size;
+      return true;
+    }
+    return false;
+  }
+
+ private:
+  std::mutex mutex_;
+  std::vector<PhysicalPoolBlock> free_blocks_;
+  std::unordered_map<uint32_t, PhysicalPoolBlock> allocated_blocks_;
+  size_t total_pooled_bytes_ = 0;
+};
+
+static PhysicalMemoryPool g_physical_pool;
+}  // namespace
 
 uint32_t ToXdkProtectFlags(uint32_t protect) {
   uint32_t result = 0;
@@ -379,6 +447,17 @@ u32 MmAllocatePhysicalMemoryEx_entry(u32 flags, u32 region_size, u32 protect_bit
   uint32_t adjusted_size = rex::round_up(region_size, page_size);
   uint32_t adjusted_alignment = rex::round_up(alignment, page_size);
 
+  const bool can_pool = (flags == 0 && min_addr_range == 0 && max_addr_range == 0xFFFFFFFFu &&
+                         page_size == 4096 && REXCVAR_GET(kernel_physical_pool));
+
+  if (can_pool) {
+    uint32_t pooled_addr = 0;
+    if (g_physical_pool.TryAlloc(adjusted_size, protect_bits, adjusted_alignment, &pooled_addr)) {
+      REXKRNL_IMPORT_RESULT("MmAllocatePhysicalMemoryEx", "addr={:#x} (pooled)", pooled_addr);
+      return pooled_addr;
+    }
+  }
+
   uint32_t allocation_type = memory::kMemoryAllocationReserve | memory::kMemoryAllocationCommit;
   uint32_t protect = FromXdkProtectFlags(protect_bits);
   bool top_down = true;
@@ -402,6 +481,9 @@ u32 MmAllocatePhysicalMemoryEx_entry(u32 flags, u32 region_size, u32 protect_bit
     // Failed - assume no memory available.
     return 0;
   }
+  if (can_pool) {
+    g_physical_pool.RecordAlloc(base_address, adjusted_size, protect_bits, adjusted_alignment);
+  }
   REXKRNL_IMPORT_RESULT("MmAllocatePhysicalMemoryEx", "addr={:#x}", base_address);
 
   return base_address;
@@ -416,6 +498,10 @@ void MmFreePhysicalMemory_entry(u32 type, u32 base_address) {
                        (uint32_t)base_address);
 
   assert_true((base_address & 0x1F) == 0);
+
+  if (g_physical_pool.TryFree(base_address)) {
+    return;
+  }
 
   auto heap = REX_KERNEL_MEMORY()->LookupHeap(base_address);
   heap->Release(base_address);

@@ -8,6 +8,7 @@ From `x360-switch-ports/skill/templates/port-journal.md`. The place to think, no
   Region/edition: to confirm (the disc has `Credits_US.bik` and `Credits_EMEA.bik`; sound in en/fr).
 - `default.xex` SHA-256 `f8fd8a979fb5451460f820303a6ca4c75e01fd943aed600983cb68fc491af7bd` (7,516,160 bytes).
   Title update: none in our files yet.
+- `xeshader.sdb` SHA-256 `7f8be91aeeb0db31c4fe6cf540ae79bdf521018f3034308c5ccbfe7e7edb9e42` (5,810,241 bytes): the game's shader container, 3,322 unique shaders translated by XenosRecomp → DXC → SPIRV-Cross → uam for deko3d.
 - Disc. Code modules (all XEX2):
   - `default.xex`: base 0x82000000, entry 0x821776A0. Draws (D3D9LTCG, XGRAPHC, D3DX9), audio (XAUDLTCG, X3DAUD,
     XMP), online (XONLINE, XHV, XRNMS).
@@ -384,7 +385,7 @@ scripted input (SOL-TEST-2) done; next: play to the first real autosave and load
   unchanged). Console, release NRO, 480p, the user stood still facing Konoha's heaviest view: 20 FPS steady; render
   thread 93 % of core 1 (~47 ms busy a frame, ~3,780 draws a frame, ~12.4 us a draw), a guest worker 85 %, the main
   thread 80 % of core 0 (~40 ms a frame), GPU ~33 ms a frame; audio misses 0-6 per 10 s. All three cores saturated.
-  Handoff to Gemini: docs/HANDOFF.md.
+  Handoff to Gemini: docs/archive/HANDOFF.md.
 
 ## Open questions and hypotheses
 

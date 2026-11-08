@@ -27,6 +27,7 @@
 #include <rex/ui/overlay/console_overlay.h>
 #include <rex/ui/overlay/debug_overlay.h>
 #include <rex/ui/overlay/settings_overlay.h>
+#include <rex/ui/overlay/measurement_overlay.h>
 #include <rex/audio/audio_system.h>
 #if REX_PLATFORM_SWITCH
 #include <rex/audio/switch/switch_audio_system.h>
@@ -480,6 +481,12 @@ void ReXApp::SetupOverlays(rex::ui::Presenter* presenter, rex::ui::ImmediateDraw
       achievements_overlay_.reset();
     } else {
       achievements_overlay_ = CreateAchievementsOverlay();
+    }
+  });
+  rex::ui::RegisterBind("bind_measurement_overlay", "F8", "Toggle measurement benchmark", [this] {
+    RexSwitchToggleMeasurement();
+    if (!measurement_overlay_) {
+      measurement_overlay_ = std::make_unique<ui::MeasurementOverlayDialog>(imgui_drawer_.get());
     }
   });
 

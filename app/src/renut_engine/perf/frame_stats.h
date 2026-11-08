@@ -1,8 +1,13 @@
 #pragma once
+#include <cstdint>
+#include <rex/ui/overlay/measurement_overlay.h>
+
 // Frame statistics for the FPS overlay. A game frame is one D3DDevice_Swap:
 // the frames the game actually finishes, whatever its update loop does.
 
 namespace renut::frame_stats {
+
+using MeasurementStatus = rex::ui::MeasurementStatus;
 
 struct Snapshot {
     static constexpr int kHistory = 180;
@@ -29,7 +34,7 @@ struct Snapshot {
 };
 
 // Called by the renderer at each guest D3DDevice_Swap.
-void OnGameFrame();
+void OnGameFrame(uint64_t game_frame_ordinal);
 
 // Called by the renderer when a frame's GPU time is known (a frame or two
 // after it was submitted).

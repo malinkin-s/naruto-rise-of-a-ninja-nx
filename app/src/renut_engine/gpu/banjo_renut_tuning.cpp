@@ -23,6 +23,7 @@
 
 #if REX_PLATFORM_SWITCH
 #include <pthread.h>
+#include <switch.h>
 #endif
 
 #include <plume_render_interface.h>
@@ -617,6 +618,9 @@ struct Stats {
   std::chrono::steady_clock::time_point half_start{};
 };
 Stats g_stats;
+#if REX_PLATFORM_SWITCH
+uint64_t g_stats_window_tick = 0;
+#endif
 
 const char *AbName(int target) {
   switch (target) {
@@ -670,6 +674,9 @@ void StatsGameFrame() {
   std::lock_guard lock(g_stats.mutex);
   if (g_stats.start == std::chrono::steady_clock::time_point{}) {
     g_stats.start = g_stats.last_report = g_stats.half_start = g_stats.last_frame = now;
+#if REX_PLATFORM_SWITCH
+    g_stats_window_tick = armGetSystemTick();
+#endif
     return;
   }
   ++g_stats.total.game_frames;
@@ -685,6 +692,15 @@ void StatsGameFrame() {
   const double since = std::chrono::duration<double>(now - g_stats.last_report).count();
   if (since < 10.0)
     return;
+#if REX_PLATFORM_SWITCH
+  const std::string measurement_run_id = rex::cvar::GetFlagByName("naruto_measure_run_id");
+  if (!measurement_run_id.empty()) {
+    const uint64_t end_tick = armGetSystemTick();
+    REXLOG_INFO("[measure] run={} renut_window_tick_start={} renut_window_tick_end={} tick_hz={}",
+                measurement_run_id, g_stats_window_tick, end_tick, armGetSystemTickFreq());
+    g_stats_window_tick = end_tick;
+  }
+#endif
   const Stats::Half &t = g_stats.total;
   const uint64_t reused = g_shared_reused.exchange(0, std::memory_order_relaxed);
   const uint64_t uploaded = g_shared_uploaded.exchange(0, std::memory_order_relaxed);

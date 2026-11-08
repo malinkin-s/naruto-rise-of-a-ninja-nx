@@ -298,6 +298,11 @@ class BaseHeap {
   void Initialize(memory::Memory* memory, uint8_t* membase, HeapType heap_type, uint32_t heap_base,
                   uint32_t heap_size, uint32_t page_size, uint32_t host_address_offset = 0);
 
+  void SetFreeBits(uint32_t start_page, uint32_t page_count, bool free);
+  bool IsRangeFreeBitmap(uint32_t start_page, uint32_t page_count) const;
+  uint32_t FindFreeRangeBitmap(uint32_t low_page, uint32_t high_page, uint32_t page_count,
+                               uint32_t page_scan_stride, bool top_down) const;
+
   memory::Memory* memory_;
   uint8_t* membase_;
   HeapType heap_type_;
@@ -310,6 +315,7 @@ class BaseHeap {
   rex::thread::global_critical_region global_critical_region_;
   std::recursive_mutex heap_mutex_;
   std::vector<PageEntry> page_table_;
+  std::vector<uint64_t> free_bits_;
 };
 
 // Normal heap allowing allocations from guest virtual address ranges.

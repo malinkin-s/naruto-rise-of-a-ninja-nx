@@ -247,6 +247,11 @@ extern "C" void RexSwitchPerfToggleAb(void) {
   }
 }
 
+std::atomic<bool> g_reset_profile_window{false};
+extern "C" void RexSwitchPerfResetWindow(void) {
+  g_reset_profile_window.store(true, std::memory_order_release);
+}
+
 /*
  * Horizon limits how much memory a process may map (LimitableResource_Memory). Our
  * guest memory model maps each chunk several times (the shadow and once per 360
@@ -411,7 +416,7 @@ void ApplyExclusiveCore(FILE* f, const std::vector<size_t>& order) {
 }
 
 void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
-            const char* mode) {
+            const char* mode, u64 end_tick) {
   const double seconds = double(elapsed_ticks) / double(tick_freq);
 
   u64 counters_now[kCounterCount];
@@ -456,6 +461,14 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
     g_sample_count = 0;
     return;
   }
+
+  // Common monotonic clock and Run ID for joining this CPU window to Renut's measurement segment.
+  // The game owns the cvar; an empty value leaves ordinary profiles unchanged.
+  const std::string run_id = rex::cvar::GetFlagByName("naruto_measure_run_id");
+  if (!run_id.empty())
+    std::fprintf(f, "[measure] run=%s cpu_window_tick_start=%llu cpu_window_tick_end=%llu tick_hz=%llu\n",
+                 run_id.c_str(), (unsigned long long)(end_tick - elapsed_ticks),
+                 (unsigned long long)end_tick, (unsigned long long)tick_freq);
 
   ApplyExclusiveCore(f, order);
 
@@ -1041,7 +1054,7 @@ void ProfilerMain(void*) {
 
   // A short first report just to set the starting CPU time.
   u64 report_start = armGetSystemTick();
-  if (report) Report(1, tick_freq, counters_last, "startup");
+  if (report) Report(1, tick_freq, counters_last, "startup", armGetSystemTick());
   report_start = armGetSystemTick();
 
   size_t rr = 0;
@@ -1094,10 +1107,16 @@ void ProfilerMain(void*) {
     }
 
     const u64 now = armGetSystemTick();
+    if (g_reset_profile_window.exchange(false, std::memory_order_acq_rel)) {
+      report_start = now;
+      for (size_t i = 0; i < kCounterCount; ++i) {
+        counters_last[i] = g_counters[i].load(std::memory_order_relaxed);
+      }
+    }
     // Once per second, FPS and resolution for the overlay (the profile report runs every 10 s).
     overlay.Step(now, tick_freq, true);
     if (report && now - report_start >= kReportSeconds * tick_freq) {
-      Report(now - report_start, tick_freq, counters_last, kModes[mode_index].name);
+      Report(now - report_start, tick_freq, counters_last, kModes[mode_index].name, now);
       if (g_ab_active.load(std::memory_order_relaxed)) {
         mode_index = (mode_index + 1) % kModeCount;
         g_skip_mask.store(kModes[mode_index].mask, std::memory_order_relaxed);

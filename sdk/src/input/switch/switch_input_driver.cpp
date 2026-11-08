@@ -663,6 +663,7 @@ void SwitchInputDriver::DispatchMenuShortcuts(Slot& slot, uint64_t held) {
       {HidNpadButton_Right, rex::ui::VirtualKey::kF4},
       {HidNpadButton_Down, rex::ui::VirtualKey::kOem3},
       {HidNpadButton_Left, rex::ui::VirtualKey::kF7},
+      {HidNpadButton_Minus, rex::ui::VirtualKey::kF8},
   };
 
   const bool modifier = (held & kModifier) == kModifier;

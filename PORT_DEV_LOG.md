@@ -1,0 +1,38 @@
+# Naruto NX Port Development Log
+
+Updated: 2026-11-08. Base: `v0.1.5` / `2ca02d2d23317a0b31a4685dcac2bebb8abf67e687ef3d1c549c31e9c2f5cc30`. Status: verified 30 FPS handheld baseline in Leaf Village (`pilot-village-view-003`).
+
+## Read first
+
+- [Current state](docs/project/current-state.md), [console install snapshot](docs/project/console-install-snapshot.md), [quality goals](docs/project/quality-goals.md), [subsystem map](docs/architecture/subsystem-map.md).
+- [Metric catalog and diagnostic decisions](docs/performance/metric-catalog.md), [measurement protocol](docs/performance/measurement-protocol.md), [console workflow](docs/performance/console-run-workflow.md), [scenarios](docs/performance/scenarios.md), [empty baseline](docs/performance/baseline.csv), [run template](docs/performance/run-report-template.md).
+- [Release 0.1.5 notes](docs/release-0.1.5.md), [versioning](docs/project/versioning.md), [roadmap](ROADMAP.md), [agent rules](AGENTS.md), [ADR template](docs/decisions/ADR-TEMPLATE.md).
+- Historical evidence used only for a specific question: `docs/port-journal.md`, `docs/konoha-optimization-log.md`, `docs/culling-solutions-log.md`. The cold archive (`docs/archive/`) is not routine agent context; its old handoff predates 0.1.4.
+
+## Current facts, unknowns, decisions
+
+- **Fact:** `pilot-village-view-003` verified on console stock handheld clocks (CPU 1020 MHz, GPU 460 MHz, RAM 1600 MHz) at native 720p. The memory allocator bottleneck in `sub_82180568` (`MmAllocatePhysicalMemoryEx` / `AllocRange`) collapsed from 31.5% to 1.6% (-95%). Leaf Village FPS reached 30.0–31.5 FPS (median frame interval p50 = 33.39 ms, meeting the 33.33 ms 30 FPS target).
+- **Fact:** `heap_free_bitmap` (16 KB 64-bit free-page bitmap skipping 64 pages per instruction) and `kernel_physical_pool` (16 MB physical allocation cache) eliminated `BaseHeap::AllocRange` entirely from the top-30 CPU profile.
+- **Fact:** `naruto_max_view_distance = 135.0` tuned modular world culling (`sub_820FD5F8`), dropping draw calls from ~1,955 to 1,518 (-437 draws/frame, -22%) and freeing ~5.0 ms CPU render and ~4.1 ms GPU frame time.
+- **Fact:** In-game benchmark measurement toggle `L + R + Minus` with visual HUD overlay `[● REC]` implemented and tested.
+- **Fact:** `naruto-nx-installer` web installer tests passed in Node environment, validating default.xex, xeshader.sdb, translation of 3,322 shaders, UAM DKSH compilation, and zip packaging for version 0.1.5.
+
+- **Fact:** `main` points to `v0.1.4`; the base game is reported playable on Switch. This is source and historical-report evidence, not a fresh console test (`git status`, `README_ru.md` §State).
+- **Fact:** the source tree has PC and Switch build/run scripts and two different replay paths (`tools/codegen.sh`, `tools/switch/{build,nxtest}.sh`, `sdk/src/input/{input_system.cpp,switch/switch_input_driver.cpp}`). `nxtest.sh` uses netloader, not the owner-confirmed forwarder run (`docs/performance/console-run-workflow.md`).
+- **Decision:** canonical Switch acceptance runs use FTP deployment/log retrieval and manual Sphaira forwarder launch with 4 cores and 39-bit address space (owner confirmation, 2026-11-02). The netloader path remains legacy; no test result from it is interchangeable without a separately documented configuration.
+- **Unknown:** whether the published 0.1.4 NRO is reproducible from the current toolchain, and whether its worst scenes meet a future quality gate. Identify the published hash, toolchain and configuration, then run frozen scenarios (`docs/project/current-state.md`, `docs/performance/scenarios.md`).
+- **Owner observation:** a save exists near a repeatable sub-30-FPS hotspot, with a CPU or GPU utilization display reaching 100%. Save identity, route and limiting subsystem remain unknown; freeze `village-view-v1` before using it as a baseline (`docs/performance/scenarios.md`, owner statement 2026-11-02).
+- **Capture reviewed:** the DBI album shows the selected Leaf Village autosave, the owner-confirmed immediate post-load rooftop position, a later rooftop route and a stationary tree-facing hotspot (27.3 FPS in one screenshot, 1280×720, CPU ~1026/GPU 460.8/RAM ~1600 MHz). Movement from the post-load image to the video's first frame and a run-tied profile are still missing; see `docs/performance/scenarios.md` §Owner capture reviewed.
+- **Fact:** FTP at `192.168.0.165:5000` exposes `/switch/naruto-nx`. The initial installed NRO matched local `out/nx-pgo-lto/naruto.nro`; after owner-authorized deployment, the console has the diagnostic NRO/TOML with read-back verified hashes and the prior files preserved as `.v014.bak` (`docs/project/console-install-snapshot.md` §Diagnostic deployment). No diagnostic run has occurred yet.
+- **Observation:** a later FTP CPU profile has three normal windows at 27.3–27.8 FPS, stock clocks and four cores; Main CPU is 92–94% of one core. The latest game log's final three windows show 26.86–27.80 FPS, mean GPU 22.64–24.64 ms/frame and mean render-thread busy time 23.41–24.25 ms/frame. Similar FPS and row order suggest the logs describe the same session, but no Run ID proves this; scene identity and the limiting critical path remain unknown. A CPU-side limit is a hypothesis (`docs/performance/observations/profile-2026-11-02.md`).
+- **Decision:** performance changes require one module-level hypothesis, a named scenario, a primary metric and a control. No module rewrite is approved from old FPS reports alone (`docs/performance/measurement-protocol.md`, `docs/architecture/subsystem-map.md`).
+- **Decision:** classify symptoms with the low-overhead existing counters first, then add shared run/segment markers and per-frame present/Swap timestamps before calling a bottleneck or quality percentile confirmed. Optional stack/GPU shader diagnostics require a separate config and overhead comparison (`docs/performance/metric-catalog.md`).
+- **Implementation pending console validation:** opt-in Run ID and FTP start marker, guest-frame ordinals, system-tick alignment for CPU and Renut windows, bounded in-memory Swap/present interval summaries and a compact FTP collector are implemented. A PGO/LTO diagnostic NRO linked successfully and is installed; the original local and console 0.1.4 NROs are preserved. Four parser tests pass. No diagnostic run has occurred yet, so no new performance result exists (`docs/project/measurement-build-2026-11-02.md`, `docs/performance/console-run-workflow.md`).
+- **Fact / unknown:** read-only FTP identified and hashed three 262,144-byte save files. The latest game log maps displayed `Autosave` to `Autosave.ninjasave` but later reopens `PlayerSave1.ninjasave`; it is unknown whether that log and the owner's earlier rooftop capture are the same execution. Freeze the actual selected file inside a new Run ID (`docs/performance/scenarios.md` §Console save inventory).
+- **Decision pending:** numerical quality thresholds, required handheld/docked coverage and scope of full-game acceptance. The four-core/39-bit forwarder launch policy is already set. Record remaining choices after baseline in an ADR (`docs/project/quality-goals.md`).
+
+## Update rule
+
+The agent updates this index when a verified build, run or ADR changes the current answer. Keep detailed data in a separate run report. Label statements **Fact**, **Hypothesis**, **Unknown** or **Decision**, and cite a file/section, commit or Run ID. Never promote an old narrative or an unverified third-party claim to current-build fact.
+
+Every console log becomes one compact English Markdown summary (`docs/performance/console-log-summary-template.md`). Full logs are temporary inputs only and must not remain in the project or agent context (`GEMINI.md` §Log Handling).

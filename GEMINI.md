@@ -4,13 +4,10 @@
 - **Never store raw or full log files in the repository or project directory** (e.g. `out/`, repo root, etc.).
 - When reading logs from the console (via FTP or local runs):
   1. Retrieve/stream them into `/tmp/` or read them in memory/temporary streams.
-  2. Parse and summarize key performance metrics:
-     - Render resolution and swapchain resolution
-     - Clocks (CPU, GPU, RAM)
-     - Framerate (FPS), render thread time, and GPU frame time
-     - Hitches, audio starvation / miss count, and file system / range-cache hit rates
+  2. Create **one compact English Markdown report per Run ID** using `docs/performance/console-log-summary-template.md`. Include run/build/scenario/config identity, observed clocks and core mask, resolution, measured interval, available FPS/frame-time/CPU/GPU/draw/memory/IO/audio metrics, errors and validity. Use `unknown` for fields absent from the log; do not infer a percentile from aggregate FPS.
   3. Immediately delete temporary raw log files from disk.
-  4. Output only concise summaries, tables, or key excerpts to save context budget and avoid workspace clutter.
+  4. Do not paste or retain the full log in chat, agent context, `out/` or the repository. Keep only the report, small diagnostic excerpts and artifact hashes/references. The accepted console path is FTP transfer/log retrieval plus manual Sphaira forwarder launch (`docs/performance/console-run-workflow.md`). `tools/switch/ftp_run_summary.py` and its `ftp_logs.py` compatibility entry point read logs into memory and retain only compact Markdown. `tools/switch/nxtest.sh` is legacy netloader tooling, not the acceptance path.
+  5. Treat `docs/archive/` as historical cold storage: do not read it during routine onboarding. Open only the specific file needed for a named historical question.
 
 ## Workflow, Incremental Progress & Verification
 - **Communication:** Talk to the user in **Russian** with clickable `file://` links for referenced code.

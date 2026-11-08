@@ -61,3 +61,10 @@ tools/switch/nx.env
 installer test/
 naruto-nx_*/
 
+# Local submodules / workflows / assistant scratch
+.kilo/
+.workflow/
+naruto-nx-installer/
+x360-switch-ports/
+
+
