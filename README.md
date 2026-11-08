@@ -15,23 +15,23 @@ The game's PowerPC code is statically recompiled with [ReXGlue](https://github.c
 emulated: Direct3D calls are drawn by Renut, a Direct3D-level renderer, on deko3d, the Switch's native graphics API.
 
 > [!IMPORTANT]
-> **[Version 0.1.4](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.4) is playable, and it
+> **[Version 0.1.5](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.5) is playable, and it
 > is still a test build.** The story mode and fights play on a real console; further testing is needed to find bugs,
-> crashes and so on. The game's files are not included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.4)).
+> crashes and so on. The game's files are not included: you need your own copy of the game (installation: [the release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.5)).
 
 ## Status
 
-**Version 0.1.4, 2026-11-02.** Measured on a Nintendo Switch, handheld mode. Tested on stock clocks (CPU 1020 MHz,
+**Version 0.1.5, 2026-11-08.** Measured on a Nintendo Switch, handheld mode. Tested on stock clocks (CPU 1020 MHz,
 GPU 460 MHz, RAM 1600 MHz) at native 720p resolution.
 
 | Area | Switch | Notes |
 |---|---|---|
 | Boot, logos, menus | **Works** | 24–29 FPS in menus |
-| Story mode (Konoha, the open world) | **Works** | **25–30 FPS on stock clocks (1020/460 MHz) at native 720p**. Draw calls reduced by ~1,400/frame via actor and modular geometry culling. Render thread CPU time dropped to ~19.6 ms. Bottleneck shifted to GPU fillrate in wide village vistas |
-| Fights | **Works** | 60 FPS (480p) / 32–47 FPS (stock 720p, 0.1.1 baseline; not re-tested in 0.1.4) |
+| Story mode (Konoha, the open world) | **Works** | **30 FPS reached in stationary pilot vista on stock clocks (1020/460 MHz) at native 720p** (up from 25–28 FPS in 0.1.4). Dynamic movement routes across the village remain under test. Draw calls reduced to ~1,500/frame via tuned culling. Allocator CPU bottleneck eliminated (-95% CPU time in `MmAllocatePhysicalMemoryEx`) |
+| Fights | **Works** | 60 FPS (480p) / 32–47 FPS (stock 720p, 0.1.1 baseline; not re-tested in 0.1.5) |
 | Saves on the SD card | **Works** | Created, listed and loaded |
 | Bink video (cutscenes) | **Works** | The intro and the first story scenes; not checked through the whole game |
-| Controller | **Works** | Played by hand in the story mode |
+| Controller | **Works** | Played by hand in the story mode; in-game benchmark toggle via **L + R + Minus** |
 | Settings (`naruto.toml`) | **Works** | Render resolution, separately for handheld and docked (`sa2_render_height_handheld` / `sa2_render_height_docked`: 480, 720 or 1080; 720 by default, 480 is faster), the game's anti-aliasing. The file is written next to the NRO at the first start |
 | Audio | Plays | With the fourth CPU core (below) no audio lag in Konoha; on three cores it stutters when the frame rate drops |
 | Fourth CPU core | **Works** | Needs a HOME Menu forwarder started with 4 cores; +0.5–1.2 FPS in the heavy spot, smoother play, clean sound |
@@ -41,9 +41,10 @@ GPU 460 MHz, RAM 1600 MHz) at native 720p resolution.
 Performance so far: sa2-nx's enhancements, an optimised code generator (registers as locals, direct calls, guest
 memory without volatile, float-mode switches skipped), store cards for Renut's caches, a batched draw queue without
 allocations, the use of a **fourth CPU core** when the game is started with four (0.1.2), PGO + LTO build optimizations (0.1.3),
-and, **new in 0.1.4**, world geometry distance culling (saving ~1,400 draw calls/frame, reducing render thread busy time
-from ~34.8 ms to ~19.68 ms with robust skydome protection). In heavy open-vista spots, the primary bottleneck has now shifted
-from CPU Core 1 to GPU fillrate (~39.5 ms GPU frame time at 460 MHz).
+world geometry distance culling with skydome protection (0.1.4), and, **new in 0.1.5**, an L1-resident 64-bit page free-bitmap
+(`heap_free_bitmap`) and 16 MB physical memory pool (`kernel_physical_pool`) eliminating 95% of memory allocator CPU time
+in `sub_82180568` on Core 0, tuned modular culling to 135m (`naruto_max_view_distance`, -437 draw calls/frame, -5.0 ms CPU render /
+-4.1 ms GPU), and an in-game measurement toggle (`L + R + Minus`) with `[● REC]` HUD overlay.
 
 #### HOME Menu forwarder and the fourth CPU core (recommended)
 
@@ -137,7 +138,7 @@ Taken from the renderer on a Nintendo Switch (half size, 640×360), version 0.1.
 
 ### Installing
 
-Through the installer page, which makes the game's shaders from your own disc: **https://malinkin-s.github.io/naruto-nx-installer/**. The steps are on [the 0.1.2 release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.2).
+Through the installer page, which makes the game's shaders from your own disc: **https://malinkin-s.github.io/naruto-nx-installer/**. The steps are on [the 0.1.5 release page](https://github.com/malinkin-s/naruto-rise-of-a-ninja-nx/releases/tag/v0.1.5).
 
 ### Building (outline)
 
