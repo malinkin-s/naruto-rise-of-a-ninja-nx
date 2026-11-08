@@ -6,7 +6,7 @@ Nintendo Switch homebrew port of *Naruto: Rise of a Ninja* (Ubisoft Montreal, 20
 
 ## Performance Status
 
-- **Open-world Konoha (Leaf Village, Story mode): Solid 30 FPS on stock clocks (1020/460 MHz)** at native 720p (up from 25–28 FPS in 0.1.4 and ~20 FPS in 0.1.1/0.1.3). Measured median frame interval p50 = **33.39 ms** (target 33.33 ms).
+- **Open-world Konoha (Leaf Village, Story mode): 30 FPS reached in stationary vista on stock clocks (1020/460 MHz)** at native 720p (up from 25–28 FPS in 0.1.4 and ~20 FPS in 0.1.1/0.1.3). Measured median frame interval in pilot spot p50 = **33.39 ms** (target 33.33 ms). Dynamic movement routes across the full village remain under test.
 - **CPU Allocator Bottleneck Eliminated:** Memory allocation overhead in `sub_82180568` (`MmAllocatePhysicalMemoryEx` / `AllocRange`) collapsed from **31.5% down to 1.6% of running samples** (a 95% reduction in allocator CPU time). `BaseHeap::AllocRange` completely vanished from the top-30 CPU profile.
 - **Draw Calls & GPU Margin:** Modular static world culling distance tuned to 135m (`naruto_max_view_distance`), reducing draw calls from ~1,955 to ~1,518 (-437 draws/frame, -22%). Freed ~5.0 ms of CPU render thread time and ~4.1 ms of GPU time, eliminating GPU fillrate saturation.
 
@@ -36,7 +36,7 @@ Nintendo Switch homebrew port of *Naruto: Rise of a Ninja* (Ubisoft Montreal, 20
 
 ## Статус производительности
 
-- **Сюжетный режим (Коноха, открытый мир): Стабильные 30 FPS на стоковых частотах (1020/460 МГц)** в нативном разрешении 720p (рост с 25–28 FPS в 0.1.4 и ~20 FPS в 0.1.1/0.1.3). Зафиксированный медианный интервал кадров p50 = **33.39 мс** (целевое значение: 33.33 мс).
+- **Сюжетный режим (Коноха, открытый мир): Достигнуты 30 FPS в тестовом ракурсе деревни на стоковых частотах (1020/460 МГц)** в нативном разрешении 720p (рост с 25–28 FPS в 0.1.4 и ~20 FPS в 0.1.1/0.1.3). Зафиксированный медианный интервал кадров в пилотной точке p50 = **33.39 мс** (целевое значение: 33.33 мс). Поведение в динамике и на маршрутах движения по деревне находится в процессе тестирования.
 - **Устранено узкое место аллокатора на CPU:** Время CPU в `sub_82180568` (`MmAllocatePhysicalMemoryEx` / `AllocRange`) сократилось с **31.5% до 1.6% сэмплов** (снижение накладных расходов аллокатора на 95%). `BaseHeap::AllocRange` полностью исчез из топ-30 профиля CPU.
 - **Снижение Draw Calls и разгрузка GPU:** Дистанция отсечения модульной геометрии мира скорректирована до 135м (`naruto_max_view_distance`), что снизило количество вызовов отрисовки с ~1955 до ~1518 (-437 draws/кадр, -22%). Освобождено ~5.0 мс на рендер-потоке CPU и ~4.1 мс на GPU.
 
