@@ -428,6 +428,16 @@ inline uint32_t CriticalSectionOwner(PPCContext& ctx, uint8_t* base) {
 // default_spin: the tries for a section initialised without a spin count (kernel_critsec_spin).
 static void xeEnterCriticalSection(X_RTL_CRITICAL_SECTION* cs, uint32_t cur_thread, uint32_t default_spin) {
   REX_SYS_CENSUS(rex::syscount::kCensusCritSecEnter, 1);
+
+  // Fast path for completely uncontended critical section
+  if (cs->owning_thread == 0 && *reinterpret_cast<volatile int32_t*>(&cs->lock_count) == -1) [[likely]] {
+    if (rex::thread::atomic_cas(-1, 0, &cs->lock_count)) {
+      cs->owning_thread = cur_thread;
+      cs->recursion_count = 1;
+      return;
+    }
+  }
+
   uint32_t spin_count = cs->header.absolute * 256;
   if (spin_count == 0) {
     // Plain InitializeCriticalSection has no spin count: a contended acquire went straight to the full

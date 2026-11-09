@@ -13,6 +13,9 @@
  *              role as a function dispatch table rather than a CPU emulator.
  */
 
+#include <algorithm>
+#include <atomic>
+
 #include <rex/assert.h>
 #include <rex/dbg.h>
 #include <rex/logging.h>
@@ -27,9 +30,19 @@ namespace rex::runtime {
 
 namespace {
 
-FunctionDispatcher* GetBoundFunctionDispatcher() {
+std::atomic<FunctionDispatcher*> g_bound_dispatcher{nullptr};
+
+inline FunctionDispatcher* GetBoundFunctionDispatcher() {
+  FunctionDispatcher* dispatcher = g_bound_dispatcher.load(std::memory_order_relaxed);
+  if (dispatcher) [[likely]] {
+    return dispatcher;
+  }
   Runtime* runtime = Runtime::instance();
-  return runtime ? runtime->function_dispatcher() : nullptr;
+  dispatcher = runtime ? runtime->function_dispatcher() : nullptr;
+  if (dispatcher) {
+    g_bound_dispatcher.store(dispatcher, std::memory_order_release);
+  }
+  return dispatcher;
 }
 
 }  // namespace
@@ -40,12 +53,27 @@ static void InvalidFunctionTrap(PPCContext& ctx, uint8_t* /*base*/) {
 }
 
 PPCFunc* ResolveIndirectFunction(uint32_t guest_address) {
+  struct CacheEntry {
+    uint32_t target;
+    PPCFunc* func;
+  };
+  thread_local CacheEntry tl_cache[16]{};
+
+  // PPC function addresses are always 4-byte aligned.
+  // Direct-mapped 16-entry thread-local cache eliminates branch thrashing for alternating targets.
+  const uint32_t slot = (guest_address >> 2) & 15;
+  if (tl_cache[slot].target == guest_address && tl_cache[slot].func) [[likely]] {
+    return tl_cache[slot].func;
+  }
+
   FunctionDispatcher* dispatcher = GetBoundFunctionDispatcher();
-  if (!dispatcher) {
+  if (!dispatcher) [[unlikely]] {
     return &InvalidFunctionTrap;
   }
 
-  if (PPCFunc* func = dispatcher->GetFunction(guest_address)) {
+  if (PPCFunc* func = dispatcher->GetFunction(guest_address)) [[likely]] {
+    tl_cache[slot].target = guest_address;
+    tl_cache[slot].func = func;
     return func;
   }
 
@@ -53,9 +81,17 @@ PPCFunc* ResolveIndirectFunction(uint32_t guest_address) {
 }
 
 FunctionDispatcher::FunctionDispatcher(rex::memory::Memory* memory, ExportResolver* export_resolver)
-    : memory_(memory), export_resolver_(export_resolver) {}
+    : memory_(memory), export_resolver_(export_resolver) {
+  fast_module_buffers_[0].count = 0;
+  fast_module_buffers_[1].count = 0;
+  active_fast_modules_.store(&fast_module_buffers_[0], std::memory_order_release);
+  g_bound_dispatcher.store(this, std::memory_order_release);
+}
 
-FunctionDispatcher::~FunctionDispatcher() = default;
+FunctionDispatcher::~FunctionDispatcher() {
+  FunctionDispatcher* expected = this;
+  g_bound_dispatcher.compare_exchange_strong(expected, nullptr, std::memory_order_release);
+}
 
 bool FunctionDispatcher::Execute(ThreadState* thread_state, uint32_t address) {
   SCOPE_profile_cpu_f("cpu");
@@ -213,6 +249,9 @@ bool FunctionDispatcher::InitializeFunctionTable(uint32_t code_base, uint32_t co
     return false;
   }
 
+  uint32_t table_base = image_base + image_size;
+  uint8_t* table_host_ptr = memory_->TranslateVirtual<uint8_t*>(table_base);
+
   module_tables_.push_back({
       .code_base = code_base,
       .code_size = code_size,
@@ -220,11 +259,14 @@ bool FunctionDispatcher::InitializeFunctionTable(uint32_t code_base, uint32_t co
       .image_size = image_size,
       .next_thunk_address = code_base + code_size,
       .thunk_limit = code_base + code_size + kThunkReserveSize,
+      .table_host_ptr = table_host_ptr,
   });
 
   if (is_entrypoint) {
     entrypoint_code_base_ = code_base;
   }
+
+  UpdateFastModuleTables();
 
   REXLOG_INFO("Function table initialized for module: code={:08X}-{:08X}, image={:08X}-{:08X}",
               code_base, code_base + code_size, image_base, image_base + image_size);
@@ -273,7 +315,21 @@ bool FunctionDispatcher::SetFunction(uint32_t guest_address, ::PPCFunc* func) {
   return true;
 }
 
-::PPCFunc* FunctionDispatcher::GetFunction(uint32_t guest_address) {
+void FunctionDispatcher::UpdateFastModuleTables() {
+  const FastModuleList* current = active_fast_modules_.load(std::memory_order_relaxed);
+  FastModuleList* next = (current == &fast_module_buffers_[0]) ? &fast_module_buffers_[1]
+                                                               : &fast_module_buffers_[0];
+  size_t count = std::min(module_tables_.size(), kMaxFastModules);
+  next->count = count;
+  for (size_t i = 0; i < count; ++i) {
+    next->modules[i].code_base = module_tables_[i].code_base;
+    next->modules[i].thunk_limit = module_tables_[i].thunk_limit;
+    next->modules[i].table_host_ptr = module_tables_[i].table_host_ptr;
+  }
+  active_fast_modules_.store(next, std::memory_order_release);
+}
+
+::PPCFunc* FunctionDispatcher::GetFunctionSlow(uint32_t guest_address) const {
   std::lock_guard<std::recursive_mutex> lock(dispatch_mutex_);
   auto it = function_table_.find(guest_address);
   if (it != function_table_.end()) {
@@ -390,6 +446,7 @@ std::optional<std::pair<uint32_t, uint32_t>> FunctionDispatcher::UnregisterModul
     }
     memory_->DestroyFunctionTable(table_it->code_base);
     module_tables_.erase(table_it);
+    UpdateFastModuleTables();
   }
 
   module_addresses_.erase(it);

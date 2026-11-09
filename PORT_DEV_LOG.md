@@ -1,10 +1,10 @@
 # Naruto NX Port Development Log
 
-Updated: 2026-11-08. Base: `v0.1.5` / `2ca02d2d23317a0b31a4685dcac2bebb8abf67e687ef3d1c549c31e9c2f5cc30`. Status: verified 30 FPS handheld baseline in Leaf Village (`pilot-village-view-003`).
+Updated: 2026-11-09. Base: `v0.1.5`. Status: GPU, Render Thread & Core 2 optimization pass completed; `run-gpu-opt-009` deployed to console. Detailed handoff: [handoff-2026-11-09.md](docs/project/handoff-2026-11-09.md).
 
 ## Read first
 
-- [Current state](docs/project/current-state.md), [console install snapshot](docs/project/console-install-snapshot.md), [quality goals](docs/project/quality-goals.md), [subsystem map](docs/architecture/subsystem-map.md).
+- [Current state](docs/project/current-state.md), [console install snapshot](docs/project/console-install-snapshot.md), [quality goals](docs/project/quality-goals.md), [subsystem map](docs/architecture/subsystem-map.md), [latest handoff](docs/project/handoff-2026-11-09.md).
 - [Metric catalog and diagnostic decisions](docs/performance/metric-catalog.md), [measurement protocol](docs/performance/measurement-protocol.md), [console workflow](docs/performance/console-run-workflow.md), [scenarios](docs/performance/scenarios.md), [empty baseline](docs/performance/baseline.csv), [run template](docs/performance/run-report-template.md).
 - [Release 0.1.5 notes](docs/release-0.1.5.md), [versioning](docs/project/versioning.md), [roadmap](ROADMAP.md), [agent rules](AGENTS.md), [ADR template](docs/decisions/ADR-TEMPLATE.md).
 - Historical evidence used only for a specific question: `docs/port-journal.md`, `docs/konoha-optimization-log.md`, `docs/culling-solutions-log.md`. The cold archive (`docs/archive/`) is not routine agent context; its old handoff predates 0.1.4.

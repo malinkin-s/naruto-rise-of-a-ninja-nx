@@ -79,6 +79,10 @@ struct FPSCRPlatform {
 
   static inline void InitHostExceptions(u32& csr) noexcept {
     csr &= ~ExceptionMask;  // Clear enable bits to disable exceptions
+#if defined(__SWITCH__)
+    // Permanently enable Flush-to-zero (FZ/FZ16) and Default NaN (DN) on Switch Cortex-A57
+    csr |= FlushMask | (1 << 25);
+#endif
   }
 };
 

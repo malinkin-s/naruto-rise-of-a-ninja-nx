@@ -73,6 +73,8 @@ if(NOT TARGET rexglue_switch_startup)
     add_library(rexglue_switch_startup OBJECT
         "${CMAKE_CURRENT_LIST_DIR}/../src/ui/runtime_switch.cpp"
         "${_rexglue_switch_driver_stubs}"
+        # sa2-nx (2026-11-05, from kameo-nx): the NRO's code on 2 MB blocks.
+        "${CMAKE_CURRENT_LIST_DIR}/../src/ui/switch_code_blocks.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/../src/ui/switch_crash_hooks.c"
         "${CMAKE_CURRENT_LIST_DIR}/../src/ui/switch_perf.cpp"
         # FPS and resolution for the console overlays (SaltyNX) and Reverse-NX reading.

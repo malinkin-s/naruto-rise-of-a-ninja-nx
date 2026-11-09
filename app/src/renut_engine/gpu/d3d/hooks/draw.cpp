@@ -348,7 +348,7 @@ void D3DDevice_Resolve_hook(u32 device, u32 flags, u32 rect_va, u32 dest_texture
                             u32 dest_level, u32 dest_slice, u32 color_va, double clear_z,
                             u32 /*z_slot*/, u32 clear_stencil, u32 parameters) {
   ClearRect rect;
-  const bool has_rect = rect_va && ReadRect(rect_va, rect);
+  bool has_rect = rect_va && ReadRect(rect_va, rect);
   i32 dest_x = 0, dest_y = 0;
   if (const auto *p = GuestPtr<const be_u32>(point_va)) {
     dest_x = i32(u32(p[0]));
@@ -664,7 +664,7 @@ BANJO_RENUT_HOOK_SHARED(sub_82565758, D3DDevice_BeginVertices_hook);  // D3DDevi
   const u32 point_va = ctx.r7.u32, dest_level = ctx.r8.u32, dest_slice = ctx.r9.u32, color_va = ctx.r10.u32;
   const u32 clear_stencil = LoadU32(ctx.r1.u32 + 92);
   ClearRect rect;
-  const bool has_rect = rect_va && ReadRect(rect_va, rect);
+  bool has_rect = rect_va && ReadRect(rect_va, rect);
   i32 dest_x = 0, dest_y = 0;
   if (const auto *p = point_va ? GuestPtr<const be_u32>(point_va) : nullptr) {
     dest_x = i32(u32(p[0]));
@@ -688,6 +688,9 @@ std::atomic<bool> g_naruto_in_end_tiling{false};
 // every tile, so inside BeginTiling the clear is widened to the tiling extent (else the lower tiles keep stale depth
 // and their geometry fails the depth test).
 std::atomic<uint32_t> g_naruto_begin_tiling_extent{0};  // (height << 16) | width while inside BeginTiling, else 0
+std::atomic<uint32_t> g_naruto_active_tiling_extent{0}; // (height << 16) | width from BeginTiling to EndTiling
+std::atomic<uint32_t> g_naruto_tiling_tile_count{3};
+std::atomic<uint32_t> g_naruto_end_tiling_resolve_idx{0};
 REXCVAR_DEFINE_BOOL(naruto_debug_clear_color, false, "Naruto/Debug",
                     "Debug: every ClearF clears to red (whether the resolve and present path shows anything)");
 REX_EXTERN(__imp__sub_821398C8);
@@ -733,15 +736,31 @@ void NarutoResolve(PPCContext &ctx, uint8_t *base) {
     RGPU_INFO("[naruto] Resolve #{}: device {:#x} flags {:#x} rect {:#x} dest {:#x} point {:#x} level {} slice {}", n,
               device, flags, rect_va, dest_texture, point_va, dest_level, dest_slice);
   ClearRect rect;
-  const bool has_rect = rect_va && ReadRect(rect_va, rect);
+  bool has_rect = rect_va && ReadRect(rect_va, rect);
   i32 dest_x = 0, dest_y = 0;
   if (const auto *p = point_va ? GuestPtr<const be_u32>(point_va) : nullptr) {
     dest_x = i32(u32(p[0]));
     dest_y = i32(u32(p[1]));
   }
   u32 resolve_flags = flags;
-  if (g_naruto_in_end_tiling.load(std::memory_order_relaxed) && REXCVAR_GET(naruto_debug_tile_noclear))
-    resolve_flags &= ~0x300u;
+  if (g_naruto_in_end_tiling.load(std::memory_order_relaxed)) {
+    if (REXCVAR_GET(naruto_debug_tile_noclear))
+      resolve_flags &= ~0x300u;
+    const u32 idx = g_naruto_end_tiling_resolve_idx.fetch_add(1, std::memory_order_relaxed);
+    const u32 total = g_naruto_tiling_tile_count.load(std::memory_order_relaxed);
+    if (idx + 1 < total) {
+      // Partial sub-tile resolve: skip host resolve completely (cuts 2/3 of all fullscreen resolve draws!)
+      __imp__sub_821398C8(ctx, base);
+      return;
+    }
+    // Final tile: collapse into a single whole-screen resolve (0, 0, width, height) -> (0, 0)
+    if (const uint32_t extent = g_naruto_active_tiling_extent.load(std::memory_order_relaxed)) {
+      rect = ClearRect{0, 0, i32(extent & 0xFFFF), i32(extent >> 16)};
+      has_rect = true;
+      dest_x = 0;
+      dest_y = 0;
+    }
+  }
   QueueHostResolve(device, resolve_flags, has_rect ? &rect : nullptr, dest_texture, dest_x, dest_y, dest_level,
                    dest_slice, color_va, float(ctx.f1.f64), clear_stencil);
   __imp__sub_821398C8(ctx, base);
@@ -845,15 +864,19 @@ BANJO_RENUT_HOOK_RAW(sub_8213A7E0) {  // D3DDevice_BeginTiling(device, flags, co
       SetTilesLocked(tiles.data(), u32(tiles.size()));
     });
     g_naruto_begin_tiling_extent.store((height << 16) | width, std::memory_order_relaxed);
+    g_naruto_active_tiling_extent.store((height << 16) | width, std::memory_order_relaxed);
+    g_naruto_tiling_tile_count.store(u32(tiles.size()), std::memory_order_relaxed);
   }
   __imp__sub_8213A7E0(ctx, base);
   g_naruto_begin_tiling_extent.store(0, std::memory_order_relaxed);
 }
 BANJO_RENUT_HOOK_RAW(sub_8213AC80) {  // D3DDevice_EndTiling(device, resolve flags, rects, dest texture, color, ...)
   const u32 device = ctx.r3.u32;
+  g_naruto_end_tiling_resolve_idx.store(0, std::memory_order_relaxed);
   g_naruto_in_end_tiling.store(true, std::memory_order_relaxed);
   __imp__sub_8213AC80(ctx, base);
   g_naruto_in_end_tiling.store(false, std::memory_order_relaxed);
+  g_naruto_active_tiling_extent.store(0, std::memory_order_relaxed);
   if (!IsRecordingCommandBuffer(device)) {
     render_thread::Queue([] {
       SetTilingExtentLocked(0, 0);
@@ -877,6 +900,8 @@ REXCVAR_DEFINE_DOUBLE(naruto_view_distance_scale, 1.0, "Naruto/Performance",
                       "View distance and LOD scale factor (1.0 = stock, 0.8 = 80%)");
 REXCVAR_DEFINE_DOUBLE(naruto_max_view_distance, 0.0, "Naruto/Performance",
                       "Max view distance in meters (0 = disabled/scaled from 200m stock)");
+REXCVAR_DEFINE_BOOL(naruto_diag_draw_telemetry, false, "Naruto/Diagnostics",
+                    "Collect per-item and per-geometry draw call telemetry (heavy unordered_map operations)");
 
 static std::atomic<u32> g_culling_tested{0};
 static std::atomic<u32> g_culling_frustum_culled{0};
@@ -919,91 +944,9 @@ BANJO_RENUT_HOOK_RAW(sub_825F1D18) {
 }
 
 BANJO_RENUT_HOOK_RAW(sub_825F18C0) {
-  const u32 p_max = ctx.r3.u32;
-  const u32 p_min = ctx.r4.u32;
-
+  // Pass through completely to Jade's original frustum and bounding-box culling.
+  // Artificial distance culling was causing sky and alpha-blended background planes to flicker.
   __imp__sub_825F18C0(ctx, base);
-
-  g_culling_tested.fetch_add(1, std::memory_order_relaxed);
-
-  if (ctx.r3.u32 != 0) {
-    // Already culled by Jade's frustum planes or near plane
-    g_culling_frustum_culled.fetch_add(1, std::memory_order_relaxed);
-    return;
-  }
-
-  // Object passed frustum planes. Check distance culling.
-  if (p_min < 0x10000u || p_max < 0x10000u) {
-    return;
-  }
-
-  const float x1 = LoadF32(p_min + 0);
-  const float y1 = LoadF32(p_min + 4);
-  const float z1 = LoadF32(p_min + 8);
-
-  const float x2 = LoadF32(p_max + 0);
-  const float y2 = LoadF32(p_max + 4);
-  const float z2 = LoadF32(p_max + 8);
-
-  const float cam_x = LoadF32(0x82722B70 + 48);
-  const float cam_y = LoadF32(0x82722B70 + 52);
-  const float cam_z = LoadF32(0x82722B70 + 56);
-
-  const float dir_x = LoadF32(0x82722B70 + 60);
-  const float dir_y = LoadF32(0x82722B70 + 64);
-  const float dir_z = LoadF32(0x82722B70 + 68);
-
-  const float dir_len_sq = dir_x * dir_x + dir_y * dir_y + dir_z * dir_z;
-  if (dir_len_sq < 0.001f) {
-    return;
-  }
-
-  const float inv_len = 1.0f / std::sqrt(dir_len_sq);
-  const float ndir_x = dir_x * inv_len;
-  const float ndir_y = dir_y * inv_len;
-  const float ndir_z = dir_z * inv_len;
-
-  const float min_x = std::min(x1, x2);
-  const float max_x = std::max(x1, x2);
-  const float min_y = std::min(y1, y2);
-  const float max_y = std::max(y1, y2);
-  const float min_z = std::min(z1, z2);
-  const float max_z = std::max(z1, z2);
-
-  // Pick closest corner of AABB along camera look vector (N-vertex)
-  const float nx = (ndir_x >= 0.0f) ? min_x : max_x;
-  const float ny = (ndir_y >= 0.0f) ? min_y : max_y;
-  const float nz = (ndir_z >= 0.0f) ? min_z : max_z;
-
-  // Planar distance along view axis to the closest point of the bounding box
-  const float dist = (nx - cam_x) * ndir_x + (ny - cam_y) * ndir_y + (nz - cam_z) * ndir_z;
-
-  if (dist < 50.0f) {
-    g_culling_dist_0_50.fetch_add(1, std::memory_order_relaxed);
-  } else if (dist < 100.0f) {
-    g_culling_dist_50_100.fetch_add(1, std::memory_order_relaxed);
-  } else if (dist < 150.0f) {
-    g_culling_dist_100_150.fetch_add(1, std::memory_order_relaxed);
-  } else if (dist < 200.0f) {
-    g_culling_dist_150_200.fetch_add(1, std::memory_order_relaxed);
-  } else {
-    g_culling_dist_200_plus.fetch_add(1, std::memory_order_relaxed);
-  }
-
-  const double custom_dist = REXCVAR_GET(naruto_max_view_distance);
-  const double scale = REXCVAR_GET(naruto_view_distance_scale);
-
-  float max_dist = 0.0f;
-  if (custom_dist > 5.0) {
-    max_dist = float(custom_dist);
-  } else if (scale > 0.05 && scale < 0.999) {
-    max_dist = float(200.0 * scale);
-  }
-
-  if (max_dist > 5.0f && dist > max_dist) {
-    ctx.r3.s64 = 1;  // Cull this object beyond max_dist
-    g_culling_dist_culled.fetch_add(1, std::memory_order_relaxed);
-  }
 }
 
 BANJO_RENUT_HOOK_RAW(sub_820EDC80) {
@@ -1016,77 +959,15 @@ BANJO_RENUT_HOOK_RAW(sub_820FC2E0) {
 }
 
 BANJO_RENUT_HOOK_RAW(sub_820FD5F8) {
+  if (!REXCVAR_GET(naruto_diag_draw_telemetry)) [[likely]] {
+    __imp__sub_820FD5F8(ctx, base);
+    return;
+  }
+
   const u32 item_va = ctx.r4.u32;
   const u32 dispatch_type = LoadU32(item_va + 160);
   const u32 mat_va = LoadU32(item_va + 12);
   const u32 geom_va = LoadU32(item_va + 28);
-
-  if (dispatch_type == 5) {
-    g_b5_items_tested.fetch_add(1, std::memory_order_relaxed);
-
-    const float cam_x = LoadF32(0x82722B70 + 48);
-    const float cam_y = LoadF32(0x82722B70 + 52);
-    const float cam_z = LoadF32(0x82722B70 + 56);
-
-    const u32 scene = ctx.r3.u32;
-    const u32 matrix_idx = LoadU32(item_va + 32);
-    const u32 matrix_array = (scene >= 0x10000u) ? LoadU32(scene + 2824) : 0;
-
-    if (matrix_array >= 0x10000u && geom_va >= 0x10000u) {
-      const u32 mptr = matrix_array + matrix_idx * 64;
-      const float tx = LoadF32(mptr + 48);
-      const float ty = LoadF32(mptr + 52);
-      const float tz = LoadF32(mptr + 56);
-
-      // Only cull positioned modular geometry (avoid culling origin/root objects)
-      if (tx != 0.0f || ty != 0.0f || tz != 0.0f) {
-        // Exclude loading screens, menus and sub-world transitions where camera is outside map
-        const bool in_gameplay = (std::abs(cam_x) < 400.0f && std::abs(cam_y) < 600.0f &&
-                                  std::abs(cam_z) < 100.0f && std::abs(cam_z) > 0.5f);
-        if (in_gameplay) {
-          const float dx = tx - cam_x;
-          const float dy = ty - cam_y;
-          const float dz = tz - cam_z;
-          const float dist_sq = dx * dx + dy * dy + dz * dz;
-          const float dist = std::sqrt(dist_sq);
-
-          if (dist < 50.0f) {
-            g_b5_dist_0_50.fetch_add(1, std::memory_order_relaxed);
-          } else if (dist < 100.0f) {
-            g_b5_dist_50_100.fetch_add(1, std::memory_order_relaxed);
-          } else if (dist < 150.0f) {
-            g_b5_dist_100_150.fetch_add(1, std::memory_order_relaxed);
-          } else if (dist < 200.0f) {
-            g_b5_dist_150_200.fetch_add(1, std::memory_order_relaxed);
-          } else {
-            g_b5_dist_200_plus.fetch_add(1, std::memory_order_relaxed);
-          }
-
-          const double custom_dist = REXCVAR_GET(naruto_max_view_distance);
-          const double scale = REXCVAR_GET(naruto_view_distance_scale);
-          float max_dist = 160.0f;
-          if (custom_dist > 5.0) {
-            max_dist = float(custom_dist);
-          } else if (scale > 0.05 && scale < 0.999) {
-            max_dist = float(200.0 * scale);
-          }
-
-          // Never cull skydome, clouds or distant horizon elements!
-          const bool is_sky = (geom_va == 0x42802bb0u || geom_va == 0x41608260u ||
-                               (mat_va & 0xFFFFF000u) == 0x40FBE000u ||
-                               (mat_va & 0xFFFFF000u) == 0x40D7D000u ||
-                               tz < -300.0f);
-
-          if (!is_sky && dist > max_dist) {
-            g_b5_items_culled.fetch_add(1, std::memory_order_relaxed);
-            StoreU32(scene + 3060, 0);
-            StoreU32(scene + 320, 0);
-            return;
-          }
-        }
-      }
-    }
-  }
 
   tl_in_item = true;
   tl_draws_in_item = 0;
@@ -1118,6 +999,11 @@ BANJO_RENUT_HOOK_RAW(sub_820FD5F8) {
 }
 
 BANJO_RENUT_HOOK_RAW(sub_820FC008) {
+  if (!REXCVAR_GET(naruto_diag_draw_telemetry)) [[likely]] {
+    __imp__sub_820FC008(ctx, base);
+    return;
+  }
+
   tl_frame_items = 0;
   tl_frame_draws = 0;
   std::memset(tl_pass_items, 0, sizeof(tl_pass_items));

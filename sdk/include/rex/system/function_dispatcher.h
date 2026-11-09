@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -83,7 +85,25 @@ class FunctionDispatcher : public IModuleRegistrar {
   bool InitializeFunctionTable(uint32_t code_base, uint32_t code_size, uint32_t image_base,
                                uint32_t image_size, bool is_entrypoint = false);
   bool SetFunction(uint32_t guest_address, ::PPCFunc* func) override;
-  ::PPCFunc* GetFunction(uint32_t guest_address);
+  ::PPCFunc* GetFunction(uint32_t guest_address) const {
+    if ((guest_address & 3) == 0) [[likely]] {
+      const FastModuleList* list = active_fast_modules_.load(std::memory_order_acquire);
+      const size_t count = list->count;
+      for (size_t i = 0; i < count; ++i) {
+        const auto& mod = list->modules[i];
+        if (guest_address >= mod.code_base && guest_address < mod.thunk_limit) {
+          uint32_t offset = (guest_address - mod.code_base) * 2;
+          auto* slot = reinterpret_cast<PPCFunc* const*>(mod.table_host_ptr + offset);
+          PPCFunc* func = *slot;
+          if (func) [[likely]] {
+            return func;
+          }
+          break;
+        }
+      }
+    }
+    return GetFunctionSlow(guest_address);
+  }
   bool HasAnyFunctionTable() const { return !module_tables_.empty(); }
   /**
    * caller_address must be inside a registered module, or 0 to mean "host-
@@ -122,7 +142,24 @@ class FunctionDispatcher : public IModuleRegistrar {
     uint32_t image_size;
     uint32_t next_thunk_address;
     uint32_t thunk_limit;
+    uint8_t* table_host_ptr = nullptr;
   };
+
+  struct FastModuleTable {
+    uint32_t code_base = 0;
+    uint32_t thunk_limit = 0;
+    const uint8_t* table_host_ptr = nullptr;
+  };
+
+  static constexpr size_t kMaxFastModules = 8;
+
+  struct FastModuleList {
+    size_t count = 0;
+    FastModuleTable modules[kMaxFastModules];
+  };
+
+  void UpdateFastModuleTables();
+  ::PPCFunc* GetFunctionSlow(uint32_t guest_address) const;
 
   ModuleTableInfo* FindModuleByAddress(uint32_t guest_address);
 
@@ -136,6 +173,10 @@ class FunctionDispatcher : public IModuleRegistrar {
 
   // Per-module function table metadata.
   std::vector<ModuleTableInfo> module_tables_;
+
+  // Double-buffered fast module table for lockless direct array dispatch.
+  FastModuleList fast_module_buffers_[2]{};
+  std::atomic<const FastModuleList*> active_fast_modules_{&fast_module_buffers_[0]};
 
   // code_base of the entrypoint module, or 0 if not yet registered.
   uint32_t entrypoint_code_base_ = 0;

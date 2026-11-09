@@ -44,6 +44,10 @@ REXCVAR_DEFINE_BOOL(sa2_renut_batch_clock, true, "SA2/Renderer",
                     "Renut's render thread reads the clock once per batch of work instead of once per item (about "
                     "1,800 items a frame in City Escape); its busy time per frame is the same sum")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(sa2_renut_lockfree_queue, true, "SA2/Renderer",
+                    "Renut's render thread takes its work from a lock-free ring (one compare-and-swap a push) instead "
+                    "of a vector under the queue's mutex. Off: the mutex and the vector")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -102,8 +106,38 @@ size_t WakeBatch() {
   static const size_t n = size_t(std::max(1, int(REXCVAR_GET(sa2_renut_wake_batch))));
   return n;
 }
+
+// sa2-nx (2026-10-28, sa2_renut_lockfree_queue): the queue as a bounded ring of kRingSlots items (D. Vyukov's bounded
+// MPMC queue, with the render thread its one consumer).
+bool g_lockfree = false;
+bool LockfreeOn() {
+  return g_lockfree;
+}
+bool g_notify_idle = true;
+size_t g_wake_batch = 16;
+
+constexpr uint64_t kRingSlots = uint64_t(1) << 14;
+constexpr uint64_t kRingAhead = 8;
+struct alignas(64) RingSlot {
+  std::atomic<uint64_t> seq{0};
+  Item item;
+};
+RingSlot *g_ring = nullptr;
+alignas(64) std::atomic<uint64_t> g_enqueue{0};
+alignas(64) std::atomic<uint64_t> g_dequeue{0};
+std::atomic<bool> g_waiting{false};
+std::atomic<bool> g_accepting{false};
+
+inline bool RingReady(uint64_t pos) {
+  return g_ring[pos & (kRingSlots - 1)].seq.load(std::memory_order_acquire) == pos + 1;
+}
+inline bool RingReadySc(uint64_t pos) {
+  return g_ring[pos & (kRingSlots - 1)].seq.load(std::memory_order_seq_cst) == pos + 1;
+}
+
 std::vector<Item> g_queue;
 std::once_flag g_start_once;
+std::atomic<bool> g_started{false};
 std::thread::id g_thread_id;
 bool g_running = false;   // the thread takes work
 bool g_stopping = false;  // Stop: finish what is queued, then end
@@ -145,9 +179,79 @@ void Execute(Item &item) {
   }
 }
 
+// sa2-nx (2026-10-28, sa2_renut_lockfree_queue): Run with the ring.
+constexpr size_t kRingRun = 256;
+void RunRing() {
+  static const bool batch_clock = REXCVAR_GET(sa2_renut_batch_clock);
+  static const bool prefetch = REXCVAR_GET(sa2_renut_prefetch_next);
+  uint64_t pos = g_dequeue.load(std::memory_order_relaxed);
+  for (;;) {
+    if (!RingReady(pos)) {
+      g_waiting.store(true, std::memory_order_seq_cst);
+      bool stopping = false;
+      if (!RingReadySc(pos)) {
+        std::unique_lock lock(g_mutex);
+        g_render_waiting = true;
+        if (WakeBatch() > 1) {
+          while (!RingReady(pos) && !g_stopping)
+            g_work_cv.wait_for(lock, std::chrono::milliseconds(2));
+        } else {
+          g_work_cv.wait(lock, [pos] { return RingReady(pos) || g_stopping; });
+        }
+        g_render_waiting = false;
+        stopping = g_stopping;
+      }
+      g_waiting.store(false, std::memory_order_relaxed);
+      if (!RingReady(pos)) {
+        if (stopping)
+          break;
+        continue;
+      }
+    }
+    const Clock::time_point start = Clock::now();
+    if (batch_clock)
+      g_item_start = start;
+    size_t n = 0;
+    Clock::time_point item_start = start;
+    do {
+      RingSlot &slot = g_ring[pos & (kRingSlots - 1)];
+      if (prefetch && RingReady(pos + 1))
+        PrefetchItem(g_ring[(pos + 1) & (kRingSlots - 1)].item);
+      if (!batch_clock)
+        g_item_start = item_start;
+      Execute(slot.item);
+      slot.item.work = nullptr;
+      slot.seq.store(pos + kRingSlots, std::memory_order_release);
+      ++pos;
+      g_dequeue.store(pos, std::memory_order_relaxed);
+      ++n;
+      if (!batch_clock) {
+        const Clock::time_point end = Clock::now();
+        g_busy += end - item_start;
+        item_start = end;
+      }
+    } while (n < kRingRun && RingReady(pos));
+    if (batch_clock)
+      g_busy += Clock::now() - start;
+    bool wake;
+    {
+      std::lock_guard lock(g_mutex);
+      g_items_done += n;
+      wake = g_done_waiters > 0 || DoneNotifyAll();
+    }
+    if (wake)
+      g_done_cv.notify_all();
+  }
+  {
+    std::lock_guard lock(g_mutex);
+    g_running = false;
+  }
+  g_accepting.store(false, std::memory_order_release);
+  g_done_cv.notify_all();
+}
+
 void Run() {
   {
-    // banjo-nx: the thread may be a plain pthread on the Switch (Start), so it records its own id.
     std::lock_guard lock(g_mutex);
     g_thread_id = std::this_thread::get_id();
   }
@@ -156,15 +260,18 @@ void Run() {
 #elif defined(__SWITCH__) || defined(__linux__)
   pthread_setname_np(pthread_self(), "renut render");
 #endif
-  banjo::renut_gpu::OnRenderThreadStart();  // banjo-nx: its core and priority on the Switch
+  banjo::renut_gpu::OnRenderThreadStart();
   t_render_thread = true;
+  if (LockfreeOn()) {
+    RunRing();
+    return;
+  }
   std::vector<Item> batch;
   for (;;) {
     {
       std::unique_lock lock(g_mutex);
       g_render_waiting = true;
       if (WakeBatch() > 1) {
-        // sa2-nx (sa2_renut_wake_batch): draws queued without a wake are taken within 2 ms at the latest.
         while (g_queue.empty() && !g_stopping)
           g_work_cv.wait_for(lock, std::chrono::milliseconds(2));
       } else {
@@ -175,15 +282,9 @@ void Run() {
         break;
       batch.swap(g_queue);
     }
-    // banjo-nx (2026-10-19, render-thread proposal 19): one clock read per item (the end of one is the start of the
-    // next). Its other half, one State().mutex hold across consecutive locked items, hung the emulator run at the
-    // first loading screen (a game thread's hook waits on the lock while the render thread's next item waits on it):
-    // each item takes the lock on its own, as before.
     Clock::time_point start = Clock::now();
     static const bool batch_clock = REXCVAR_GET(sa2_renut_batch_clock);
     if (batch_clock) {
-      // sa2-nx (2026-10-20): the batch's start for every item (QueueFrame's item counts its frame up to itself from
-      // there and leaves the rest of the batch to the next frame), one clock read at the end.
       g_item_start = start;
       static const bool prefetch = REXCVAR_GET(sa2_renut_prefetch_next);
       const size_t n = batch.size();
@@ -220,25 +321,83 @@ void Run() {
 }
 
 void Start() {
+  if (g_started.load(std::memory_order_acquire)) [[likely]]
+    return;
+  struct SetStarted {
+    ~SetStarted() { g_started.store(true, std::memory_order_release); }
+  };
+  const SetStarted set_started;
   std::call_once(g_start_once, [] {
-    InstallLateInput();  // banjo-nx (2026-10-19, banjo_late_input): the delay function (it reads the key per frame)
+    InstallLateInput();
     std::lock_guard lock(g_mutex);
     g_running = true;
-    // Never joined or destroyed: the renderer's objects are left at exit too
-    // (Video::BeginShutdown), and a joinable std::thread destroyed at exit
-    // would terminate the process.
-    // banjo-nx: a 1 MB stack on the Switch (the conversions and the driver run deep on this thread), never joined
-    // (banjo_renut_tuning.h); Run records its id.
+    g_lockfree = REXCVAR_GET(sa2_renut_lockfree_queue);
+    g_notify_idle = banjo::renut_gpu::QueueNotifyIdleOn();
+    g_wake_batch = WakeBatch();
+    if (LockfreeOn()) {
+      g_ring = new RingSlot[kRingSlots];
+      for (uint64_t i = 0; i < kRingSlots; ++i)
+        g_ring[i].seq.store(i, std::memory_order_relaxed);
+      g_accepting.store(true, std::memory_order_release);
+    }
     banjo::renut_gpu::StartLongLivedThread(Run, 1024 * 1024);
-    RGPU_INFO("Render thread started");
+    RGPU_INFO("Render thread started (lockfree={})", g_lockfree);
   });
 }
 
-// sa2-nx (2026-10-20, sa2_renut_wake_batch): before a thread waits for the render thread, the draws queued without a
-// wake are handed over. Requires g_mutex.
 void WakeForWaitLocked() {
+  if (LockfreeOn()) {
+    if (g_render_waiting && g_ring && RingReady(g_dequeue.load(std::memory_order_relaxed)))
+      g_work_cv.notify_one();
+    return;
+  }
   if (g_render_waiting && !g_queue.empty())
     g_work_cv.notify_one();
+}
+
+bool PushRing(Item &&item, bool draw) {
+  uint64_t pos = g_enqueue.load(std::memory_order_relaxed);
+  RingSlot *slot;
+  for (;;) {
+    slot = &g_ring[pos & (kRingSlots - 1)];
+    const uint64_t seq = slot->seq.load(std::memory_order_acquire);
+    const int64_t diff = int64_t(seq - pos);
+    if (diff == 0) {
+      if (g_enqueue.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed))
+        break;
+    } else if (diff < 0) {
+      if (t_render_thread) {
+        static std::atomic<bool> logged{false};
+        if (!logged.exchange(true))
+          RGPU_WARN("Render thread queue full ({} items): the render thread's own item ran at once "
+                    "(sa2_renut_lockfree_queue)", kRingSlots);
+        return false;
+      }
+      if (g_waiting.load(std::memory_order_seq_cst)) {
+        {
+          std::lock_guard lock(g_mutex);
+        }
+        g_work_cv.notify_one();
+      }
+      std::this_thread::yield();
+      pos = g_enqueue.load(std::memory_order_relaxed);
+    } else {
+      pos = g_enqueue.load(std::memory_order_relaxed);
+    }
+  }
+  __builtin_prefetch(&g_ring[(pos + kRingAhead) & (kRingSlots - 1)], 1);
+  slot->item = std::move(item);
+  slot->seq.store(pos + 1, std::memory_order_seq_cst);
+  const bool wake = (g_waiting.load(std::memory_order_seq_cst) &&
+                     (!draw || pos + 1 - g_dequeue.load(std::memory_order_relaxed) >= g_wake_batch)) ||
+                    !g_notify_idle;
+  if (wake) {
+    {
+      std::lock_guard lock(g_mutex);
+    }
+    g_work_cv.notify_one();
+  }
+  return true;
 }
 
 void Push(std::function<void()> work, bool locked, const void *prefetch0 = nullptr,
@@ -247,13 +406,18 @@ void Push(std::function<void()> work, bool locked, const void *prefetch0 = nullp
     renut::gpu::FlushDrawBatch();
   }
   Start();
+  if (LockfreeOn()) {
+    Item item{std::move(work), locked, {prefetch0, prefetch1}};
+    if (g_accepting.load(std::memory_order_acquire) && PushRing(std::move(item), draw))
+      return;
+    Execute(item);
+    return;
+  }
   {
     std::unique_lock lock(g_mutex);
-    // (Work queued by the render thread's own work runs after it.)
     if (g_running && !g_stopping) {
       g_queue.push_back({std::move(work), locked, {prefetch0, prefetch1}});
       ++g_items_queued;
-      // Draws are queued in batches (up to 16 draws per item), so waking on >= 1 batch is immediate.
       const bool wake = (g_render_waiting && (!draw || g_queue.size() >= 1)) ||
                         !banjo::renut_gpu::QueueNotifyIdleOn();
       lock.unlock();
@@ -262,7 +426,6 @@ void Push(std::function<void()> work, bool locked, const void *prefetch0 = nullp
       return;
     }
   }
-  // Shutting down: nothing takes work any more, so run it here.
   Item item{std::move(work), locked, {}};
   Execute(item);
 }
@@ -477,7 +640,7 @@ void Drain() {
   std::unique_lock lock(g_mutex);
   if (!g_running || std::this_thread::get_id() == g_thread_id)
     return;
-  const uint64_t target = g_items_queued;
+  const uint64_t target = LockfreeOn() ? g_enqueue.load(std::memory_order_acquire) : g_items_queued;
   WakeForWaitLocked();  // sa2-nx (sa2_renut_wake_batch)
   ++g_done_waiters;  // sa2-nx (sa2_renut_done_notify_waiters)
   g_done_cv.wait(lock, [target] { return !g_running || g_items_done >= target; });
@@ -499,6 +662,7 @@ void Stop() {
       return;
     g_stopping = true;
   }
+  g_accepting.store(false, std::memory_order_release);
   g_work_cv.notify_all();
   g_done_cv.notify_all();
 }

@@ -200,10 +200,15 @@ struct FPSCRRegister {
   }
 
   inline void disableFlushModeUnconditional() noexcept {
+#if defined(__SWITCH__) && defined(__aarch64__)
+    // Flush-to-zero is permanently enabled on Switch Cortex-A57 to avoid pipeline-flushing MSR FPCR instructions.
+    return;
+#else
     REX_SYS_CENSUS_SITE(rex::syscount::kCensusFlushWrite);
     if ((csr & FlushMask) == 0) REX_SYS_CENSUS(rex::syscount::kCensusFlushSame, 1);
     csr &= ~FlushMask;
     setcsr(csr);
+#endif
   }
 
   inline void enableFlushMode() noexcept {
@@ -215,11 +220,15 @@ struct FPSCRRegister {
   }
 
   inline void disableFlushMode() noexcept {
+#if defined(__SWITCH__) && defined(__aarch64__)
+    return;
+#else
     if ((csr & FlushMask) != 0) [[unlikely]] {
       REX_SYS_CENSUS_SITE(rex::syscount::kCensusFlushWrite);
       csr &= ~FlushMask;
       setcsr(csr);
     }
+#endif
   }
 
   // tools/flush_mode_flow.py: the test of a check the control flow proved redundant (PC builds keep it).

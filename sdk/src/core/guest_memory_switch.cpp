@@ -5,6 +5,7 @@
 #include "guest_memory_switch.h"
 
 #include <malloc.h>
+#include <stdio.h>
 #include <string.h>
 #include <switch.h>
 
@@ -23,6 +24,9 @@ constexpr size_t kPageSize  = 0x1000;
  * page table.
  */
 constexpr size_t kBlockSize = 0x200000;
+
+/* sa2-nx (2026-11-05, from kameo-nx): banjo_window_blocks, see RexGmInit. */
+bool g_window_blocks = true;
 
 constexpr size_t AlignDown(size_t v, size_t a) { return v & ~(a - 1); }
 constexpr size_t AlignUp(size_t v, size_t a) { return (v + a - 1) & ~(a - 1); }
@@ -373,8 +377,18 @@ uint8_t* RexGmInit(size_t size) {
     std::lock_guard<std::mutex> lock(s.mutex);
     if (s.base) return s.base;
 
+    /*
+     * sa2-nx (2026-11-05, from kameo-nx, found by the Torchlight port): the second argument of virtmemFindAslr is a
+     * guard, not an alignment. So the window was never on a 2 MB boundary, its 2 MB chunks never lined up with their
+     * physical addresses, and the kernel used 4 KB pages for all of the game's memory. 2 MB more is asked for and the
+     * base rounded up.
+     */
     virtmemLock();
-    s.base = static_cast<uint8_t*>(virtmemFindAslr(size, kBlockSize));
+    {
+        const size_t extra = g_window_blocks ? kBlockSize : 0;
+        const uintptr_t found = reinterpret_cast<uintptr_t>(virtmemFindAslr(size + extra, kBlockSize));
+        if (found) s.base = reinterpret_cast<uint8_t*>(g_window_blocks ? AlignUp(found, kBlockSize) : found);
+    }
     if (s.base) s.reservation = virtmemAddReservation(s.base, size);
     virtmemUnlock();
 
@@ -799,5 +813,193 @@ void* RexGmShadowFor(uint64_t window_address) {
 }
 
 }  // extern "C"
+
+/*
+ * sa2-nx (2026-11-05, from kameo-nx): how much the TLB costs, on the console (banjo_tlb_test_s). From the Torchlight port's method: the
+ * same number of cache lines in random order, first one to a page over thousands of pages, then packed into a few pages.
+ * Both come mostly from the L2 cache, so the difference is the cost of finding the page. A regular order would measure
+ * the prefetcher and the L2 instead. svcQueryPhysicalAddress refuses these mappings, so this is the evidence there is. An
+ * emulator's numbers mean nothing here: it only shows that the test runs.
+ */
+extern "C" char _start;  /* the executable's first instruction; __start__ is never relocated */
+
+namespace {
+
+constexpr size_t kChaseLines = 2048;
+
+/*
+ * Which line of a page the i-th page uses. It has to look random: physically contiguous memory (which blocks need) indexes
+ * the 2 MB, 16-way L2 by address bits 6 to 16, and the first version's (i % 64) made bits 12 to 16 follow from bits 6 to 11.
+ * That put 2048 lines in 64 sets, 32 to a set: every load missed the L2, and the test measured RAM instead of the TLB
+ * (+112 to +153 ns on the console, in all but the ret test and a view of 1024 lines).
+ */
+size_t LineOfPage(size_t i) { return static_cast<size_t>((u64(i + 1) * 0x9E3779B97F4A7C15ull) >> 58); }
+
+/* ns per load, the best of 8 passes after a warm-up. Each load's address depends on the last load, so they can't overlap. */
+double ChaseNs(const uintptr_t* addrs, size_t n) {
+    u64 best = ~u64(0);
+    u64 dep = 0;
+    for (int pass = 0; pass < 9; pass++) {
+        const u64 start = armGetSystemTick();
+        for (size_t i = 0; i < n; i++) {
+            u64 value;
+            __asm__ volatile(
+                "ldr %[v], [%[a], %[d]]\n"
+                "and %[d], %[v], xzr\n"
+                : [v] "=&r"(value), [d] "+r"(dep)
+                : [a] "r"(addrs[i])
+                : "memory");
+        }
+        const u64 ticks = armGetSystemTick() - start;
+        if (pass > 0 && ticks < best) best = ticks;
+    }
+    return double(armTicksToNs(best)) / double(n);
+}
+
+/* The same for instruction fetches: every address holds a ret, so a call does nothing but fetch it. */
+double FetchNs(const uintptr_t* addrs, size_t n) {
+    u64 best = ~u64(0);
+    for (int pass = 0; pass < 9; pass++) {
+        const u64 start = armGetSystemTick();
+        for (size_t i = 0; i < n; i++) reinterpret_cast<void (*)()>(addrs[i])();
+        const u64 ticks = armGetSystemTick() - start;
+        if (pass > 0 && ticks < best) best = ticks;
+    }
+    return double(armTicksToNs(best)) / double(n);
+}
+
+void Shuffle(std::vector<uintptr_t>& a) {
+    u64 x = 0x9E3779B97F4A7C15ull;
+    for (size_t i = a.size(); i > 1; i--) {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        std::swap(a[i - 1], a[x % i]);
+    }
+}
+
+void EmitPair(void (*emit)(const char*), const char* what, double scattered, double grouped, size_t ns, size_t ng) {
+    char line[160];
+    snprintf(line, sizeof(line), "[tlb] %s: scattered %.1f ns, grouped %.1f ns, +%.1f ns (%zu and %zu lines)", what, scattered,
+             grouped, scattered - grouped, ns, ng);
+    emit(line);
+}
+
+void CodeAddresses(u64 va, u64 size, bool rets, std::vector<uintptr_t>& scattered, std::vector<uintptr_t>& grouped) {
+    const size_t pages = size / kPageSize;
+    const size_t stride = std::max<size_t>(1, pages / kChaseLines);
+    constexpr u32 kRet = 0xD65F03C0;
+    for (size_t i = 0; i < kChaseLines && i * stride < pages; i++) {
+        const u64 page = va + i * stride * kPageSize;
+        const u64 line = page + LineOfPage(i) * 64;
+        if (!rets) {
+            scattered.push_back(line);
+            continue;
+        }
+        for (u64 at = line; at < page + kPageSize; at += 4) {
+            if (*reinterpret_cast<const u32*>(at) == kRet) {
+                scattered.push_back(at);
+                break;
+            }
+        }
+    }
+    const u64 middle = va + (pages / 2) * kPageSize;
+    const u64 end = va + size;
+    if (!rets) {
+        for (u64 at = middle; at + 64 <= end && grouped.size() < kChaseLines; at += 64) grouped.push_back(at);
+        return;
+    }
+    /* At most one to a line, so that they don't share a fetch. */
+    for (u64 line = middle; line + 64 <= end && line < middle + 512 * kPageSize && grouped.size() < kChaseLines; line += 64) {
+        for (u64 at = line; at < line + 64; at += 4) {
+            if (*reinterpret_cast<const u32*>(at) == kRet) {
+                grouped.push_back(at);
+                break;
+            }
+        }
+    }
+}
+
+}  // namespace
+
+extern "C" void RexGmSetWindowBlocks(bool on) { g_window_blocks = on; }
+
+extern "C" void RexGmLatencyTest(void (*emit)(const char*)) {
+    State& s = S();
+    std::vector<uintptr_t> scattered, grouped;
+    scattered.reserve(kChaseLines);
+    grouped.reserve(kChaseLines);
+    char line[160];
+    snprintf(line, sizeof(line), "[tlb] window at 0x%llX: %s a 2 MB boundary", (unsigned long long)RexGmBase(),
+             (reinterpret_cast<uintptr_t>(RexGmBase()) & (kBlockSize - 1)) ? "NOT on" : "on");
+    emit(line);
+
+    const size_t view_count = [&] {
+        std::lock_guard<std::mutex> lock(s.mutex);
+        return s.views.size();
+    }();
+    for (size_t vi = 0; vi < view_count; vi++) {
+        scattered.clear();
+        grouped.clear();
+        double far = 0, near = 0;
+        size_t view_start = 0;
+        {
+            /* The lock keeps every page of the lists mapped while they are read, so none of this can fault. */
+            std::lock_guard<std::mutex> lock(s.mutex);
+            if (vi >= s.views.size()) break;
+            const View& v = s.views[vi];
+            view_start = static_cast<size_t>(v.base - s.base);
+            for (const auto& kv : s.chunks) {
+                const Chunk& c = kv.second;
+                if (scattered.size() >= kChaseLines) break;
+                if (!s.view_mapped.count({vi, c.offset})) continue;
+                size_t lo, hi;
+                if (!Intersect(c.offset, c.length, v.offset, v.length, &lo, &hi)) continue;
+                const size_t win = view_start + (lo - v.offset);
+                for (size_t off = 0; off + kPageSize <= hi - lo && scattered.size() < kChaseLines; off += kPageSize) {
+                    if (s.protection.count(win + off)) continue;
+                    const uintptr_t page = reinterpret_cast<uintptr_t>(s.base) + win + off;
+                    scattered.push_back(page + LineOfPage(scattered.size()) * 64);
+                    for (size_t l = 0; l < 64 && grouped.size() < kChaseLines; l++) grouped.push_back(page + l * 64);
+                }
+            }
+            if (scattered.size() < kChaseLines / 2) continue;  /* too little of this view is in use */
+            Shuffle(scattered);
+            Shuffle(grouped);
+            far = ChaseNs(scattered.data(), scattered.size());
+            near = ChaseNs(grouped.data(), grouped.size());
+        }
+        char what[48];
+        snprintf(what, sizeof(what), "game memory, view at +0x%zX", view_start);
+        EmitPair(emit, what, far, near, scattered.size(), grouped.size());
+    }
+
+    MemoryInfo text = {}, ro = {};
+    u32 page_info = 0;
+    if (R_FAILED(svcQueryMemory(&text, &page_info, reinterpret_cast<u64>(&_start)))) return;
+    scattered.clear();
+    grouped.clear();
+    CodeAddresses(text.addr, text.size, false, scattered, grouped);
+    Shuffle(scattered);
+    Shuffle(grouped);
+    { const double f = ChaseNs(scattered.data(), scattered.size()), n = ChaseNs(grouped.data(), grouped.size());
+      EmitPair(emit, "text, read", f, n, scattered.size(), grouped.size()); }
+    scattered.clear();
+    grouped.clear();
+    CodeAddresses(text.addr, text.size, true, scattered, grouped);
+    Shuffle(scattered);
+    Shuffle(grouped);
+    { const double f = FetchNs(scattered.data(), scattered.size()), n = FetchNs(grouped.data(), grouped.size());
+      EmitPair(emit, "text, run", f, n, scattered.size(), grouped.size()); }
+    if (R_SUCCEEDED(svcQueryMemory(&ro, &page_info, text.addr + text.size)) && ro.size >= 64 * kPageSize) {
+        scattered.clear();
+        grouped.clear();
+        CodeAddresses(ro.addr, ro.size, false, scattered, grouped);
+        Shuffle(scattered);
+        Shuffle(grouped);
+        const double f = ChaseNs(scattered.data(), scattered.size()), n = ChaseNs(grouped.data(), grouped.size());
+        EmitPair(emit, "read-only data", f, n, scattered.size(), grouped.size());
+    }
+}
 
 #endif /* __SWITCH__ */

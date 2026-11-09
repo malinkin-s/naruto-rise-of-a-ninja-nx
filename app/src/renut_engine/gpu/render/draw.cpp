@@ -136,6 +136,12 @@ REXCVAR_DEFINE_BOOL(naruto_renut_draw_fastpath, true, "Naruto/Renderer",
                     "Renut's renderer: skip redundant target, texture, viewport, shader and PSO lookups on consecutive "
                     "draws where device state outside float constants did not change (foliage / submesh fastpath)")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(sa2_renut_clear_repeat, true, "SA2/Renderer",
+                    "Renut's renderer: a whole clear of a target that holds exactly that clear already (its last whole "
+                    "clear had the same values, and nothing has drawn into it or replaced its image since) is not sent "
+                    "to the GPU (SA2 clears its scene target whole twice at the start of each frame). The same pixels. "
+                    "Off: every clear sent")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 REXCVAR_DECLARE(bool, sa2_renut_neon_compare);  // sa2-nx (2026-10-20): backend/queued.cpp
 
@@ -155,6 +161,17 @@ bool DiagCountsOn() {
     return logger && logger->should_log(spdlog::level::info);
   }();
   return on;
+}
+
+// sa2-nx (2026-10-28): sa2_renut_clear_repeat, once, and its count (render thread), logged every 3,000.
+bool ClearRepeatOn() {
+  static const bool on = REXCVAR_GET(sa2_renut_clear_repeat);
+  return on;
+}
+void CountRepeatedClear() {
+  static uint64_t count = 0;
+  if (++count % 3000 == 1)
+    RGPU_INFO("[renut] clears of a target that held that clear already, not sent: {} (sa2_renut_clear_repeat)", count);
 }
 
 // naruto-nx (2026-10-28, naruto_debug_census): which draws fill the render thread's ~7.5-8 us a draw. Render thread
@@ -4438,7 +4455,8 @@ struct DrawFastPathState {
   plume::RenderPipeline *pipeline = nullptr;
   SharedConstants sc{};
   u8 rt_depth_bytes[20]{};
-  u8 tex01_bytes[8]{};
+  u8 tex_bytes[32]{};  // Textures[0..7] (covering chunks 67 and 68)
+  u32 declaration_va = 0;
 };
 static DrawFastPathState g_fastpath;
 
@@ -4458,13 +4476,15 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
 #else
   constexpr bool can_pushed = false;
 #endif
-  // Chunks 28..29 (1792..1919) hold VertexFetch[2..17] (streams 15..0).
-  // Chunks 66..67 (12416..12543, changed[1] bits 2..3) hold IndexBuffer (12428), RenderTargets/DepthStencil (12432..12451),
-  // StreamSources (12452..12515), StreamStrides (12520..12535), and Textures[0..1] (12536..12543).
+  // Chunks 27..29 (1728..1919) hold VertexFetch[0..17] (streams 15..0).
+  // Chunk 56 (11776..11839, changed[0] bit 56) holds VertexDeclaration (11812).
+  // Chunks 66..68 (12416..12607, changed[1] bits 2..4) hold IndexBuffer (12428), RenderTargets/DepthStencil (12432..12451),
+  // StreamSources (12452..12515), StreamStrides (12520..12535), and Textures[0..17] (12536..12607).
   // Allowing these chunks (while verifying the non-stream bytes in them and ensuring no command list split, clear, or
   // resolve happened since the previous draw) lets back-to-back submesh draws with new vertex/index buffers take the fast path.
-  constexpr uint64_t kFastPathAllowed0 = (1ull << 28) | (1ull << 29);
-  constexpr uint64_t kFastPathAllowed1 = (1ull << 2) | (1ull << 3);
+  constexpr uint64_t kFastPathAllowed0 = (1ull << 27) | (1ull << 28) | (1ull << 29) | (1ull << 56);
+  constexpr uint64_t kFastPathAllowed1 = (1ull << 2) | (1ull << 3) | (1ull << 4);
+  const u32 decl_va = device.U32(d3d::kDeviceOffsetVertexDeclaration);
   const bool can_fastpath = fastpath_on && can_pushed && chain.seq &&
                             chain.seq == g_fastpath.seq + 1 &&
                             s.list_open &&
@@ -4476,10 +4496,12 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
                             g_bound.shared_words_set &&
                             (chain.changed[0] & ~kFastPathAllowed0) == 0 &&
                             (chain.changed[1] & ~kFastPathAllowed1) == 0 &&
+                            (!(chain.changed[0] & (1ull << 56)) ||
+                             decl_va == g_fastpath.declaration_va) &&
                             (!(chain.changed[1] & (1ull << 2)) ||
                              std::memcmp(device_state + d3d::kDeviceOffsetRenderTargets, g_fastpath.rt_depth_bytes, 20) == 0) &&
-                            (!(chain.changed[1] & (1ull << 3)) ||
-                             std::memcmp(device_state + d3d::kDeviceOffsetTextures, g_fastpath.tex01_bytes, 8) == 0) &&
+                            (!((chain.changed[1] & ((1ull << 3) | (1ull << 4)))) ||
+                             std::memcmp(device_state + d3d::kDeviceOffsetTextures, g_fastpath.tex_bytes, sizeof(g_fastpath.tex_bytes)) == 0) &&
                             call.primitive == g_fastpath.primitive &&
                             !call.tessellation && call.primitive != kPointList &&
                             g_fastpath.export_count == 0 &&
@@ -4539,12 +4561,18 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     const FloatConstants ps_constants = DrawFloatConstants(device_state, replay, true);
     plume::RenderCommandList *cmd = s.command_list;
 #if defined(PLUME_DEKO3D)
-    PushFloatConstants(cmd, vs_constants, g_fastpath.vs_used, g_bound.pushed_vs, vs->entry, g_pushed_buffers.address);
-    PushFloatConstants(cmd, ps_constants, g_fastpath.ps_used, g_bound.pushed_ps, ps ? ps->entry : nullptr,
-                       g_pushed_buffers.address + kPushedFloatStride);
+    const bool vs_dirty = !replay || !replay->vs_dirty || *replay->vs_dirty != 0;
+    const bool ps_dirty = !replay || !replay->ps_dirty || *replay->ps_dirty != 0;
+    if (vs_dirty) {
+      PushFloatConstants(cmd, vs_constants, g_fastpath.vs_used, g_bound.pushed_vs, vs->entry, g_pushed_buffers.address);
+    }
+    if (ps_dirty) {
+      PushFloatConstants(cmd, ps_constants, g_fastpath.ps_used, g_bound.pushed_ps, ps ? ps->entry : nullptr,
+                         g_pushed_buffers.address + kPushedFloatStride);
+    }
     g_bound.vs_constants.replay = 0;
     g_bound.ps_constants.replay = 0;
-    banjo::renut_gpu::CountPushedConstants(1, 2);
+    banjo::renut_gpu::CountPushedConstants(1, (vs_dirty ? 1 : 0) + (ps_dirty ? 1 : 0));
 #endif
 
     GpuStreams gpu_streams{};
@@ -5359,8 +5387,9 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     g_fastpath.key = key;
     g_fastpath.pipeline = pipeline;
     g_fastpath.sc = sc;
+    g_fastpath.declaration_va = device.U32(d3d::kDeviceOffsetVertexDeclaration);
     std::memcpy(g_fastpath.rt_depth_bytes, device_state + d3d::kDeviceOffsetRenderTargets, 20);
-    std::memcpy(g_fastpath.tex01_bytes, device_state + d3d::kDeviceOffsetTextures, 8);
+    std::memcpy(g_fastpath.tex_bytes, device_state + d3d::kDeviceOffsetTextures, sizeof(g_fastpath.tex_bytes));
     fp_guard.armed = false;
   }
   return true;
@@ -5546,11 +5575,30 @@ void ClearTargets(const Targets &t, u32 flags, const plume::RenderRect &rect, co
   static std::vector<HostSurface *> aliases;
   static std::vector<HostSurface *> found;
   aliases.clear();
+  // sa2-nx (2026-10-28, sa2_renut_clear_repeat): a whole clear of a target that holds exactly that clear already (its
+  // last whole clear had the same values, and neither a write nor a new image since: writes and generation as that
+  // clear left them) is not sent; everything else about it is as before. SA2 clears its scene target whole twice at
+  // the start of a frame. Draws and clears are what count a target's writes; a hand-over or a rebuild changes its
+  // generation.
+  const bool repeat_on = ClearRepeatOn();
+  const auto whole = [&](const HostSurface *s) {
+    return rect.left <= 0 && rect.top <= 0 && rect.right >= int32_t(s->width) && rect.bottom >= int32_t(s->height);
+  };
   for (uint32_t i = 0; i < t.color_count; ++i) {
     if (!(flags & (1u << i)))
       continue;
-    ++t.colors[i]->writes;  // banjo-nx (banjo_renut_resolve_skip)
-    cmd->clearColor(i, clear_color, &host_rect, 1);
+    HostSurface *c = t.colors[i];
+    const bool repeat = repeat_on && whole(c) && c->clear_known && c->clear_generation == c->generation &&
+                        c->clear_writes == c->writes && std::memcmp(c->clear_color, color, sizeof(c->clear_color)) == 0;
+    ++c->writes;  // banjo-nx (banjo_renut_resolve_skip)
+    if (repeat)
+      CountRepeatedClear();
+    else
+      cmd->clearColor(i, clear_color, &host_rect, 1);
+    c->clear_known = whole(c);
+    c->clear_generation = c->generation;
+    c->clear_writes = c->writes;
+    std::memcpy(c->clear_color, color, sizeof(c->clear_color));
     ColorAliasesLocked(t.colors[i], found);
     for (HostSurface *alias : found) {
       if (std::find(aliases.begin(), aliases.end(), alias) == aliases.end() &&
@@ -5559,9 +5607,35 @@ void ClearTargets(const Targets &t, u32 flags, const plume::RenderRect &rect, co
     }
   }
   if (t.depth && (flags & 0x30)) {
-    ++t.depth->writes;  // banjo-nx (banjo_renut_resolve_skip)
-    cmd->clearDepthStencil((flags & 0x10) != 0, (flags & 0x20) != 0, depth, stencil & 0xFF,
-                           &host_rect, 1);
+    HostSurface *d = t.depth;
+    const bool zc = (flags & 0x10) != 0, sc = (flags & 0x20) != 0;
+    const bool same = whole(d) && d->clear_generation == d->generation && d->clear_writes == d->writes;
+    const bool repeat = repeat_on && same &&
+                        (!zc || (d->clear_depth_known && std::memcmp(&d->clear_depth, &depth, sizeof(depth)) == 0)) &&
+                        (!sc || (d->clear_stencil_known && d->clear_stencil == (stencil & 0xFF)));
+    ++d->writes;  // banjo-nx (banjo_renut_resolve_skip)
+    if (repeat)
+      CountRepeatedClear();
+    else
+      cmd->clearDepthStencil(zc, sc, depth, stencil & 0xFF, &host_rect, 1);
+    // sa2-nx (sa2_renut_clear_repeat): what the target holds now; a part it did not clear keeps what was known of it
+    // only while the image and its writes are the ones that knowledge was of.
+    if (!whole(d)) {
+      d->clear_depth_known = d->clear_stencil_known = false;
+    } else {
+      if (!same)
+        d->clear_depth_known = d->clear_stencil_known = false;
+      if (zc) {
+        d->clear_depth_known = true;
+        d->clear_depth = depth;
+      }
+      if (sc) {
+        d->clear_stencil_known = true;
+        d->clear_stencil = stencil & 0xFF;
+      }
+    }
+    d->clear_generation = d->generation;
+    d->clear_writes = d->writes;
   }
   for (HostSurface *alias : aliases) {
     Targets a;
@@ -5576,6 +5650,7 @@ void ClearTargets(const Targets &t, u32 flags, const plume::RenderRect &rect, co
       continue;
     const plume::RenderRect alias_host = ScaleRect(alias_rect, a.scale);
     ++alias->writes;  // banjo-nx (banjo_renut_resolve_skip)
+    alias->clear_known = false;  // sa2-nx (sa2_renut_clear_repeat): not followed through aliases
     cmd->clearColor(0, clear_color, &alias_host, 1);
   }
 }
