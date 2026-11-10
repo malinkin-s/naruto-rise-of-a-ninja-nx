@@ -1,0 +1,5 @@
+#!/bin/sh
+# Optional Git pre-commit hook to verify documentation, state integrity and task constraints.
+# To enable locally:
+#   ln -s ../../tools/agent/pre-commit .git/hooks/pre-commit
+exec python3 tools/agent/check_docs.py

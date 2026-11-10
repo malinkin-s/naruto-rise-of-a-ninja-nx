@@ -1,5 +1,8 @@
 # naruto-nx 0.1.5 (playable test build)
 
+> [!NOTE]
+> Historical release notes. For the current engineering state, verified baseline metrics and corrected claims (including the reversion of 135m modular culling due to sky plane flicker and stationary vs segment-mean FPS), refer to [STATE.md](../STATE.md) §Corrected claims.
+
 Nintendo Switch homebrew port of *Naruto: Rise of a Ninja* (Ubisoft Montreal, 2007, Xbox 360). Fan project, not affiliated with Ubisoft, Bandai Namco, Microsoft or Nintendo. The game's files are not included: you need your own copy of the game.
 
 **Status: playable test build.** Measured on a Nintendo Switch in handheld mode on stock clocks (CPU 1020 MHz, GPU 460 MHz, RAM 1600 MHz) at native 720p.

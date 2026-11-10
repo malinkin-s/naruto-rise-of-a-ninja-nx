@@ -1,38 +1,26 @@
-# Индекс функций игры (`tools/re/index.py`)
+# Game Function Index (`tools/re/index.py`)
 
-REA не открывает образы Xbox 360 (PE, COFF machine `0x01f2`; в `raw-binary` нет PowerPC), поэтому читаемой формой кода
-служит рекомпилированный C++ в `app/generated/` (у каждой строки в комментарии оригинальная инструкция PowerPC).
-`tools/re/index.py` делает из него индекс: по каждой функции (29 967 шт., default.xex и AI2C) — размер, FP/векторные/
-косвенные вызовы, строки, на которые она ссылается (адреса из пар `lis`/`addi`, строки из образа модуля), вызываемые и
-вызывающие функции, теги по строкам. Только чтение, ничего не собирается (индекс — `out/re/index.json`, вне git).
+Static analysis tooling for the recompiled codebase. Because REA does not directly open Xbox 360 PE/COFF images (machine `0x01f2`) without PowerPC disassembly in raw-binary mode, the recompiled C++ in `app/generated/` serves as human-readable source code (each line retains the original PowerPC instruction in comments).
 
-```
+`tools/re/index.py` builds a symbol cross-reference index across all 29,967 functions in `default.xex` and `AI2C`: function sizes, FP/vector/indirect call statistics, referenced string literals (addresses from `lis`/`addi` pairs, string tables from module images), caller/callee trees, and string tags. It is read-only and requires no compilation (`out/re/index.json`, outside Git).
+
+```bash
 python3 tools/re/index.py build
-python3 tools/re/index.py find FadeDist        # кто ссылается на строку
-python3 tools/re/index.py func 825DA240        # одна функция
+python3 tools/re/index.py find FadeDist        # find who references a string
+python3 tools/re/index.py func 825DA240        # inspect single function
 python3 tools/re/index.py callers 82137E00 -d 3
 python3 tools/re/index.py tag vegetation
-python3 tools/re/index.py hot FILE             # FILE: строки "ADDR вес" (стек-профиль) -> строки индекса по убыванию веса
+python3 tools/re/index.py hot FILE             # FILE: "ADDR weight" lines -> index entries sorted by weight
 ```
 
-## Что уже видно (статика, без запуска)
-- В движке нет строк `cull`/`lod`-дальности: видимость и дальность задаются данными, а не именованными параметрами.
-  Из имён есть только `_f_FullFadeDist` / `_f_BeginFadeDist` (проверка параметров, `ai2c` `sub_881EE440`),
-  `_vVegetationWindParams` (ветер листвы: вершинный шейдер, на число draw'ов не влияет) и `NearFarCtrl` (камера).
-- Путь отрисовки: `T_820F02C0` (`sub_820F02C0`) → `sub_820FC008` → `sub_820F2470`/`sub_82120FF8` → 32 функции-отправителя
-  `0x82102890…0x82120FF8` (по одной на тип примитива/материала) → `sub_821024A8` → `D3DDevice_DrawIndexedVertices`
-  (`sub_82137E00`) и `DrawVertices` (`sub_82137A18`). Три из них (`82105648`, `82107498`, `821039A0`) вызываются из
-  диспетчера `sub_820FD5F8` по таблице (см. `app/indirect_promotions.txt`).
-- Значит, решение «рисовать или нет» принимается выше, в потоке `Main`, когда команды ставятся в очередь потока
-  `T_820F02C0`. Отсекать draw'ы в самих отправителях дешевле всего для render thread и `T_820F02C0`; чтобы сэкономить и
-  `Main`, нужно найти место постановки в очередь (это следующий шаг).
+## Static Findings (No Run Required)
 
-## Устройство кадра в потоке `T_820F02C0` (по `sub_820F02C0`, `sub_820FC008`, `sub_820FC2E0`, `sub_820FD5F8`)
-- Главный поток собирает пакет кадра (3208 байт, два пакета по очереди: индекс `(счётчик-1)&1`, счётчик по смещению 6416
-  структуры). Поток `T_820F02C0` в цикле берёт пакет (режим 1 = рисовать, 2 = выход) и вызывает `sub_820FC008(пакет)`.
-- В пакете: список элементов отрисовки с головой по смещению **+2240**, связанный по полю **+216** (элемент 216 байт);
-  `sub_820FC2E0` обходит его и для каждого элемента вызывает `sub_820FD5F8(пакет, элемент)` (состояние, затем отправители
-  примитивов); списки проходов по +2288 и +2504 (до 9 групп по 20 байт) обходит `sub_820FC9C0`.
-- Следовательно, элемент списка — единица, которую можно пропустить целиком (экономит `T_820F02C0` + CaptureDelta + render
-  thread). Что лежит в элементе (поле +8 — флаги, +12 / +28 — ссылки на материал и вершинные данные, +24 — число
-  подэлементов) и какие из них листва, по статике не определить: нужен лог на консоли.
+- **No Named Cull/LOD Distances:** The engine lacks string-based `cull` or `lod` distance parameters; visibility and distance thresholds are embedded in data assets. The only related named identifiers are `_f_FullFadeDist` / `_f_BeginFadeDist` (parameter checks in `ai2c` `sub_881EE440`), `_vVegetationWindParams` (foliage wind: vertex shader, does not affect draw count), and `NearFarCtrl` (camera).
+- **Draw Call Pipeline:** `T_820F02C0` (`sub_820F02C0`) → `sub_820FC008` → `sub_820F2470` / `sub_82120FF8` → 32 emitter functions (`0x82102890`…`0x82120FF8`, one per primitive/material type) → `sub_821024A8` → `D3DDevice_DrawIndexedVertices` (`sub_82137E00`) and `DrawVertices` (`sub_82137A18`). Three emitters (`82105648`, `82107498`, `821039A0`) are called through the dispatcher `sub_820FD5F8` via jump tables (see `app/indirect_promotions.txt`).
+- **Culling Location:** Draw inclusion decisions are made upstream in `Main XThread` when command packets are queued for worker thread `T_820F02C0`. Skipping draws inside emitters saves render thread and `T_820F02C0` time; saving `Main XThread` time requires locating the queue enqueue point.
+
+## Frame Structure in Thread `T_820F02C0` (`sub_820F02C0`, `sub_820FC008`, `sub_820FC2E0`, `sub_820FD5F8`)
+
+- The main thread builds a frame packet (3,208 bytes, double-buffered: index `(counter - 1) & 1`, counter at structure offset +6416). Thread `T_820F02C0` loops, takes the packet (mode 1 = draw, 2 = exit), and invokes `sub_820FC008(packet)`.
+- The packet contains a linked list of render items with its head at offset **+2240**, linked by field **+216** (item size 216 bytes). `sub_820FC2E0` traverses the list and invokes `sub_820FD5F8(packet, item)` for each element (state setup followed by primitive emitters). Pass lists at +2288 and +2504 (up to 9 groups of 20 bytes) are traversed by `sub_820FC9C0`.
+- Each list item is a complete unit that can be culled as a batch (saving `T_820F02C0`, `CaptureDelta`, and render thread time). Item contents (+8 flags, +12 / +28 material and vertex buffer references, +24 sub-item count) require console logging to correlate with foliage clusters.

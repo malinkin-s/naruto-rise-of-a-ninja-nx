@@ -11,7 +11,7 @@ Historical read-only FTP inspection of `192.168.0.165:5000`, root `/switch/narut
 
 `logs/rex/rex_profile.log` exists (34,463 B). A read-only in-memory parse found seven profile windows. Its **last** window reports CPU 1020.0 MHz, GPU 460.8 MHz, RAM 1600.0 MHz, process cores 4 (mask `0xF`), game 28.9 FPS and zero audio requests without data. The run's scene, start time, Build ID and measured interval are unknown; these values are **not** a baseline result. No full log was retained.
 
-The profile was later updated to 45,070 B; its newer compact summary is `docs/performance/observations/profile-2026-11-02.md`. The two readings must not be treated as one identified run.
+The profile was later updated to 45,070 B; its newer compact summary is `docs/archive/profile-2026-11-02.md`. The two readings must not be treated as one identified run.
 
 **Next verification:** identify whether this NRO is the published 0.1.4 artifact, record a fresh Run ID and scenario, and capture a profile whose time window is tied to the owner's hotspot save and camera. The hash match proves only equality with the local NRO file, not its source commit or release provenance.
 
@@ -25,3 +25,13 @@ After the owner authorized FTP deployment, the diagnostic NRO and one-run TOML f
 | `naruto.toml` | `c1e02936931cad7a7b3f7397ac8ea56c83712e8d64111d5d13cf650e35812276` | Installed one-run configuration, Run ID `pilot-village-view-001` |
 | `naruto.nro.v014.bak` | `29ef5654af47671ff3b85537b3d2027c5dcbef430a0dd99debceb707ce4024e1` | Preserved previous NRO |
 | `naruto.toml.v014.bak` | `c1e70b783e4badf48210c542863697021bfc804fe021b03b86a49adf93dc18af` | Preserved previous TOML |
+
+## Console Candidate Deployment — 2026-11-09 / 2026-11-10
+
+Deployed PGO+LTO build for `run-gpu-opt-009` candidate verification (`docs/tasks/T001-verify-7509546.md`). Built from HEAD `7509546` with `-DNARUTO_PGO=use -DNARUTO_SWITCH_LTO=ON -DSA2_RENUT_RELEASE_SHADERS=ON`.
+
+| Console path under `/switch/naruto-nx/` | SHA-256 | Role |
+|---|---|---|
+| `naruto.nro` | `e9f15f71868eb9d939c81fcf6300df3f4bce59bb62205b887c7907e1c21f76bd` | Installed candidate NRO (`run-gpu-opt-009`) |
+| `naruto.toml` | configured with `naruto_measure_run_id = "run-gpu-opt-009"` | Active measurement configuration |
+

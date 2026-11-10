@@ -1,6 +1,6 @@
 # Metric Catalog and Diagnostic Decisions
 
-This catalog describes **what the v0.1.4 source can report**, not a validated baseline. A counter's existence does not prove it is present in a particular console log. Evidence: cited source paths and the compact `observations/profile-2026-11-02.md` report. Read `measurement-protocol.md` before comparing runs. Targets and tolerances remain TBD until baseline and owner decision (`docs/project/quality-goals.md`).
+This catalog describes **what the v0.1.4 source can report**, not a validated baseline. A counter's existence does not prove it is present in a particular console log. Evidence: cited source paths and the compact `docs/archive/profile-2026-11-02.md` report. Read `measurement-protocol.md` before comparing runs. Targets and tolerances remain TBD until baseline and owner decision (`docs/project/quality-goals.md`).
 
 ## Measurement terms and limits
 
@@ -36,7 +36,7 @@ Availability for the **installed 0.1.4 binary**: **L** = logged with its current
 4. **Choose one module metric:** for CPU use named function/stack share or a measured wait; for render use busy time and draw-kind census; for GPU use work-by-kind time; for memory/load use bytes/latency/peak; for audio use misses or drift. State a falsifiable predicted direction and guardrails before any edit.
 5. **Run A/B and regressions:** compare repeated valid runs at the same scene/config, including frame pacing, game speed, output correctness, memory and audio. A faster substage with unchanged or worse user-facing cadence is not a confirmed optimization.
 
-**Current example, still preliminary:** `observations/profile-2026-11-02.md` records 27–28 FPS windows, Main CPU at 92–94% of one core and a separate Renut log with mean GPU time around 23–25 ms/frame. This motivates a synchronized main-thread/wait test. The logs have no shared Run ID or proven scene identity, so the example does not rank a module for optimization.
+**Current example, still preliminary:** `docs/archive/profile-2026-11-02.md` records 27–28 FPS windows, Main CPU at 92–94% of one core and a separate Renut log with mean GPU time around 23–25 ms/frame. This motivates a synchronized main-thread/wait test. The logs have no shared Run ID or proven scene identity, so the example does not rank a module for optimization.
 
 ## Telemetry work, in dependency order
 

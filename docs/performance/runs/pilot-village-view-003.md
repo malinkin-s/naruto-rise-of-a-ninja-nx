@@ -24,27 +24,10 @@ Full windows inside segment: 2 Renut, 2 CPU. The run still requires save, route,
 
 | Modular Culling (Batch5) | Batches tested/fr | Batches culled/fr (%) | Items tested/fr | Items culled/fr (%) |
 |---|---:|---:|---:|---:|
-| Current window | 0.0 | 0.0 (0.0%) | 2086.2 | 945.9 (45.3%) |
-| Current window | 0.0 | 0.0 (0.0%) | 2145.0 | 1003.2 (46.8%) |
-| Current window | 0.0 | 0.0 (0.0%) | 2172.3 | 1042.1 (48.0%) |
-| Current window | 0.0 | 0.0 (0.0%) | 2170.0 | 1040.0 (47.9%) |
-| Current window | 0.0 | 0.0 (0.0%) | 2170.0 | 1040.1 (47.9%) |
-| Current window | 0.0 | 0.0 (0.0%) | 2170.0 | 1040.0 (47.9%) |
+| Segment window | 0.0 | 0.0 (0.0%) | 2170.0 | 1040.0 (47.9%) |
 
 | Culling Distances | <50m | 50–100m | 100–150m | 150–200m | >200m |
 |---|---:|---:|---:|---:|---:|
-| Distance histogram | 303.6 | 464.1 | 613.8 | 540.0 | 159.7 |
-| Distance histogram | 308.3 | 477.0 | 590.8 | 566.3 | 197.6 |
-| Distance histogram | 313.2 | 486.2 | 559.9 | 583.0 | 225.0 |
 | Distance histogram | 313.0 | 486.0 | 560.0 | 583.0 | 223.0 |
-| Distance histogram | 313.0 | 486.0 | 560.0 | 583.0 | 223.0 |
-| Distance histogram | 313.0 | 486.0 | 560.0 | 583.0 | 223.0 |
-
-## Bottleneck Verdict
-
-- **Primary Limit: MAIN_CPU_BOUND** (Main XThread: ~31.9 ms / 97.0% of Core 0 vs 33.3 ms target budget)
-- **Secondary Factor: DRAW_CALL_VOLUME** (1518 draws/frame; scene complexity)
-- **GPU Status:** Headroom available (27.3 ms GPU time; 6.0 ms margin to 30 FPS target)
-- **Prescribed Action:** Profile guest functions with `tools/switch_profile_report.py`; tighten modular culling `max_dist` in `sub_820FD5F8`.
 
 **Unknown until the run metadata and checkpoints are reviewed:** exact scene, build/ELF identity, console model, mode, shader-cache state, simulation-clock drift, functional correctness and whether counters perturb timing.

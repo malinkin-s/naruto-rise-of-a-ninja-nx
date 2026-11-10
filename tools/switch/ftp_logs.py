@@ -2,7 +2,7 @@
 """Compatibility entry point for compact FTP measurement summaries.
 
 The earlier version wrote full console logs into out/runs/. That is disallowed by
-GEMINI.md Log Handling. This entry point now has the same Run ID arguments and
+AGENTS.md Log Handling. This entry point now has the same Run ID arguments and
 behavior as ftp_run_summary.py and never retains raw logs.
 """
 

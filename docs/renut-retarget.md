@@ -1,8 +1,11 @@
 # Retargeting Renut to Naruto (XDK 2.0.6274, D3D9LTCG)
 
-Renut (app/src/renut_engine, vendored unmodified from sa2-nx adf3a4e) hooks the game's Direct3D at fixed guest
-addresses and reads/writes the device's private fields at fixed offsets. Both are SA2's (Direct3D 2.0.21076) in the
-vendored code. Every one must be replaced with Naruto's, each with its source (docs/d3d-census.md for the functions).
+> [!NOTE]
+> Historical design document (2026-10-24). Describes the initial Direct3D 2.0.21076 to XDK 2.0.6274 retargeting. The renderer is fully operational on Switch with native deko3d backend; the accepted console workflow uses the Sphaira forwarder (`docs/performance/console-run-workflow.md`).
+
+Renut (`app/src/renut_engine`, vendored from `sa2-nx` `adf3a4e`) hooks the game's Direct3D at fixed guest
+addresses and reads/writes the device's private fields at fixed offsets. Both were SA2's (Direct3D 2.0.21076) in the
+vendored code. Every one was replaced with Naruto's, each with its source (`docs/d3d-census.md` for the functions).
 
 ## What must change
 
@@ -31,4 +34,4 @@ vendored code. Every one must be replaced with Naruto's, each with its source (d
 
 1. PC, plume Vulkan: the device created, the ring as a sink, fences completing, Swap presenting: the clear colour.
 2. PC: shaders and draws; lockstep against the Xenos emulation with the recorded scenarios (tools/pc/scenarios).
-3. Switch: deko3d back end and the shader package; a picture on the console through tools/switch/nxtest.sh.
+3. Switch: deko3d back end and the shader package; operational game on console via Sphaira forwarder (`tools/switch/nxtest.sh` was initial netloader testing).

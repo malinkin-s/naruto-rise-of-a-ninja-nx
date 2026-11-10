@@ -3,6 +3,9 @@
 
 The raw game and CPU logs exist only in memory. A report is *pending* unless both
 logs carry the requested Run ID and have complete windows inside its segment.
+
+When --control <run_id> is passed, the report appends an observation table comparing
+primary metrics against that control run's saved Markdown report.
 """
 
 import argparse
@@ -89,51 +92,8 @@ def culling_info(game, start_time, end_time):
     return batch_lines, dist_lines
 
 
-def classify_bottleneck(gw, cw, end_line):
-    main_cpu = None
-    render_cpu = None
-    draw_thread_cpu = None
-    fps = None
-    for w in cw:
-        if "fps" in w:
-            fps = w["fps"]
-        for name, val in w["threads"].items():
-            if name.startswith("Main XThread"):
-                main_cpu = val
-            elif name.lower().startswith("renut render"):
-                render_cpu = val
-            elif "820F02C0" in name:
-                draw_thread_cpu = val
-
-    mean_draws = sum(w[8] for w in gw) / len(gw) if gw else (float(metric(end_line, "draws_per_frame")) if metric(end_line, "draws_per_frame") != "unknown" else 0.0)
-    gpu_ms = sum(w[7] for w in gw) / len(gw) if gw else (float(metric(end_line, "gpu_ms")) if metric(end_line, "gpu_ms") != "unknown" else 0.0)
-    render_busy_ms = sum(w[6] for w in gw) / len(gw) if gw else (float(metric(end_line, "render_busy_ms")) if metric(end_line, "render_busy_ms") != "unknown" else 0.0)
-
-    main_ms = (main_cpu * 10.0 / fps) if (main_cpu and fps and fps > 0) else 0.0
-
-    verdict = ["## Bottleneck Verdict", ""]
-    if mean_draws and mean_draws < 200:
-        verdict.append("> [!WARNING]\n> Low draw count detected (<200 draws/frame). Scene is likely a 2D menu or loading screen, not the Leaf Village gameplay.\n")
-
-    if main_ms >= 32.0 or (main_cpu and main_cpu >= 88.0):
-        verdict.append(f"- **Primary Limit: MAIN_CPU_BOUND** (Main XThread: ~{main_ms:.1f} ms / {main_cpu:.1f}% of Core 0 vs 33.3 ms target budget)")
-        if mean_draws and mean_draws > 1400:
-            verdict.append(f"- **Secondary Factor: DRAW_CALL_VOLUME** ({mean_draws:.0f} draws/frame; scene complexity)")
-        if gpu_ms:
-            margin = 33.33 - gpu_ms
-            verdict.append(f"- **GPU Status:** Headroom available ({gpu_ms:.1f} ms GPU time; {margin:.1f} ms margin to 30 FPS target)")
-        verdict.append("- **Prescribed Action:** Profile guest functions with `tools/switch_profile_report.py`; tighten modular culling `max_dist` in `sub_820FD5F8`.")
-    elif gpu_ms >= 30.0:
-        verdict.append(f"- **Primary Limit: GPU_BOUND** (GPU execution: {gpu_ms:.1f} ms at 460 MHz vs 33.3 ms target)")
-        verdict.append("- **Prescribed Action:** Profile GPU passes with `renut_gpu_profile = 10.0`.")
-    elif render_busy_ms >= 26.0:
-        verdict.append(f"- **Primary Limit: RENDER_DRIVER_BOUND** (Render thread busy: {render_busy_ms:.1f} ms)")
-        verdict.append("- **Prescribed Action:** Check pipeline cache and command submission in Renut.")
-    elif fps and fps >= 29.0:
-        verdict.append("- **Status: PASS_30FPS** (Engine is meeting the 30 FPS target within tolerance).")
-    else:
-        verdict.append("- **Status: PACING_OR_MIXED** (Frame time variation or pacing slip without a dominant single-stage limit).")
-    return "\n".join(verdict)
+def is_nonzero_cull(groups):
+    return any(float(x) > 0.0 for x in groups)
 
 
 def game_windows(game, run_id, start_tick, end_tick):
@@ -188,7 +148,78 @@ def metric(end_line, name):
     return m.group(1) if m else "unknown"
 
 
-def render_report(run_id, game_name, game_data, profile_data):
+def parse_run_report_metrics(report_text):
+    """Extract primary scalar metrics from an existing run report."""
+    res = {}
+    m = re.search(r"^\|\s*guest\s*\|\s*\d+\s*\|\s*\d+\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*/\s*([\d.]+)\s*/\s*([\d.]+)", report_text, re.MULTILINE)
+    if m:
+        res["guest_fps"] = float(m.group(1))
+        res["guest_p50"] = float(m.group(2))
+        res["guest_p95"] = float(m.group(3))
+        res["guest_p99"] = float(m.group(4))
+    m = re.search(r"^\|\s*present\s*\|\s*\d+\s*\|\s*\d+\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*/\s*([\d.]+)\s*/\s*([\d.]+)", report_text, re.MULTILINE)
+    if m:
+        res["present_fps"] = float(m.group(1))
+        res["present_p50"] = float(m.group(2))
+        res["present_p95"] = float(m.group(3))
+        res["present_p99"] = float(m.group(4))
+
+    renut_rows = re.findall(r"^\|\s*\d+–\d+\s*\|\s*[^|]+\|\s*\d+\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|", report_text, re.MULTILINE)
+    if renut_rows:
+        res["renut_fps"] = sum(float(r[0]) for r in renut_rows) / len(renut_rows)
+        res["render_busy_ms"] = sum(float(r[1]) for r in renut_rows) / len(renut_rows)
+        res["gpu_ms"] = sum(float(r[2]) for r in renut_rows) / len(renut_rows)
+        res["draws_per_frame"] = sum(float(r[3]) for r in renut_rows) / len(renut_rows)
+
+    cpu_rows = re.findall(r"^\|\s*\d+–\d+\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+|unknown)\s*\|\s*([\d.]+|unknown)\s*\|", report_text, re.MULTILINE)
+    if cpu_rows:
+        res["profile_fps"] = sum(float(r[0]) for r in cpu_rows) / len(cpu_rows)
+        res["total_cpu"] = sum(float(r[1]) for r in cpu_rows) / len(cpu_rows)
+        main_vals = [float(r[2]) for r in cpu_rows if r[2] != "unknown"]
+        if main_vals:
+            res["main_cpu"] = sum(main_vals) / len(main_vals)
+        render_vals = [float(r[3]) for r in cpu_rows if r[3] != "unknown"]
+        if render_vals:
+            res["render_cpu"] = sum(render_vals) / len(render_vals)
+    return res
+
+
+def render_comparison_table(candidate_metrics, control_metrics, control_id):
+    """Render an observation comparison against a control run report."""
+    rows = [
+        ("Guest FPS (Swap)", "guest_fps", "↑", True),
+        ("Guest p50 interval (ms)", "guest_p50", "↓", False),
+        ("Guest p99 interval (ms)", "guest_p99", "↓", False),
+        ("Present FPS", "present_fps", "↑", True),
+        ("Present p50 interval (ms)", "present_p50", "↓", False),
+        ("Present p99 interval (ms)", "present_p99", "↓", False),
+        ("Render busy mean (ms)", "render_busy_ms", "↓", False),
+        ("GPU mean (ms)", "gpu_ms", "↓", False),
+        ("Draws / frame", "draws_per_frame", "—", None),
+        ("Main CPU %", "main_cpu", "↓", False),
+        ("Render CPU %", "render_cpu", "↓", False),
+    ]
+    out = [
+        f"## Comparison against Control (`{control_id}`)",
+        "",
+        "> [!NOTE]",
+        "> Observation only. Scene, save, route and TOML identity must match before attributing any delta to code changes.",
+        "",
+        f"| Metric | Control (`{control_id}`) | Candidate | Δ | Desired |",
+        "|---|---:|---:|---:|:---:|",
+    ]
+    for label, key, desired, higher_better in rows:
+        c_val = control_metrics.get(key)
+        k_val = candidate_metrics.get(key)
+        if c_val is None or k_val is None:
+            continue
+        delta = k_val - c_val
+        sign = "+" if delta > 0 else ""
+        out.append(f"| {label} | {c_val:.2f} | {k_val:.2f} | {sign}{delta:.2f} | {desired} |")
+    return "\n".join(out)
+
+
+def render_report(run_id, game_name, game_data, profile_data, control_id=None, control_report_text=None):
     game = game_data.decode("utf-8", "replace")
     profile = profile_data.decode("utf-8", "replace")
     seg = segment(game, run_id)
@@ -232,25 +263,35 @@ def render_report(run_id, game_name, game_data, profile_data):
         lines.append("| not measured: no full CPU window | | | | | | | |")
 
     batches, dists = culling_info(game, start, end)
-    if batches or dists:
-        lines += ["", "| Modular Culling (Batch5) | Batches tested/fr | Batches culled/fr (%) | Items tested/fr | Items culled/fr (%) |",
-                  "|---|---:|---:|---:|---:|"]
-        for b in batches:
-            lines.append(f"| Current window | {b[0]} | {b[1]} ({b[2]}%) | {b[3]} | {b[4]} ({b[5]}%) |")
-        if dists:
+    nonzero_batches = [b for b in batches if is_nonzero_cull(b)]
+    nonzero_dists = [d for d in dists if is_nonzero_cull(d)]
+    if nonzero_batches or nonzero_dists:
+        if nonzero_batches:
+            b = nonzero_batches[-1]
+            lines += ["", "| Modular Culling (Batch5) | Batches tested/fr | Batches culled/fr (%) | Items tested/fr | Items culled/fr (%) |",
+                      "|---|---:|---:|---:|---:|",
+                      f"| Segment window | {b[0]} | {b[1]} ({b[2]}%) | {b[3]} | {b[4]} ({b[5]}%) |"]
+        if nonzero_dists:
+            d = nonzero_dists[-1]
             lines += ["", "| Culling Distances | <50m | 50–100m | 100–150m | 150–200m | >200m |",
-                      "|---|---:|---:|---:|---:|---:|"]
-            for d in dists:
-                lines.append(f"| Distance histogram | {d[0]} | {d[1]} | {d[2]} | {d[3]} | {d[4]} |")
+                      "|---|---:|---:|---:|---:|---:|",
+                      f"| Distance histogram | {d[0]} | {d[1]} | {d[2]} | {d[3]} | {d[4]} |"]
 
-    lines += ["", classify_bottleneck(gw, cw, end_line), ""]
-    lines += ["**Unknown until the run metadata and checkpoints are reviewed:** exact scene, build/ELF identity, console model, mode, shader-cache state, simulation-clock drift, functional correctness and whether counters perturb timing.", ""]
+    lines += ["", "**Unknown until the run metadata and checkpoints are reviewed:** exact scene, build/ELF identity, console model, mode, shader-cache state, simulation-clock drift, functional correctness and whether counters perturb timing.", ""]
+
+    if control_id and control_report_text:
+        candidate_text = "\n".join(lines)
+        candidate_m = parse_run_report_metrics(candidate_text)
+        control_m = parse_run_report_metrics(control_report_text)
+        lines += [render_comparison_table(candidate_m, control_m, control_id), ""]
+
     return "\n".join(lines)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("run_id", help="unique Run ID configured in naruto_measure_run_id")
+    ap.add_argument("--control", help="control Run ID; reads docs/performance/runs/<control>.md for delta table")
     ap.add_argument("--ip", default="192.168.0.165")
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--dir", default="/switch/naruto-nx")
@@ -259,6 +300,16 @@ def main():
     args = ap.parse_args()
     if not ID_RE.fullmatch(args.run_id):
         ap.error("Run ID must be 1–64 ASCII letters, digits, hyphens or underscores")
+    if args.control and not ID_RE.fullmatch(args.control):
+        ap.error("--control Run ID must be 1–64 ASCII letters, digits, hyphens or underscores")
+
+    control_text = None
+    if args.control:
+        control_path = ROOT / "docs/performance/runs" / (args.control + ".md")
+        if not control_path.is_file():
+            ap.error(f"control report does not exist: {control_path}")
+        control_text = control_path.read_text(encoding="utf-8")
+
     logs = args.dir.rstrip("/") + "/logs"
     try:
         with ftplib.FTP() as ftp:
@@ -272,7 +323,7 @@ def main():
     except (OSError, ftplib.Error, ValueError) as exc:
         print(f"FTP collection failed: {exc}", file=sys.stderr)
         return 1
-    report = render_report(args.run_id, name, game, profile)
+    report = render_report(args.run_id, name, game, profile, control_id=args.control, control_report_text=control_text)
     output = args.output or ROOT / "docs/performance/runs" / (args.run_id + ".md")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(report, encoding="utf-8")

@@ -1,6 +1,6 @@
 # Console Log Summary — TEMPLATE
 
-One short English Markdown file per Run ID, for example `run-...-console-summary.md`. This is the retained result of parsing a console log, **not a copy of that log**. Use `unknown` when absent; use `not measured` when telemetry did not collect the metric. Never fabricate percentiles from 10-second averages. Source policy: `GEMINI.md` §Log Handling; run identity: `docs/project/versioning.md`.
+One short English Markdown file per Run ID, for example `run-...-console-summary.md`. This is the retained result of parsing a console log, **not a copy of that log**. Use `unknown` when absent; use `not measured` when telemetry did not collect the metric. Never fabricate percentiles from 10-second averages. Source policy: `AGENTS.md` §Log Handling; run identity: `docs/project/versioning.md`.
 
 ## Identity and validity
 

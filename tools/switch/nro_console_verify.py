@@ -10,7 +10,7 @@ primitive errors via `nx_crashes.py`), and delegates measurement metrics to
 `ftp_run_summary.py`.
 
 Raw logs are retained only in memory. Only compact Markdown reports are written;
-no full log is retained in the repository (GEMINI.md §Log Handling).
+no full log is retained in the repository (AGENTS.md §Log Handling).
 
 Usage:
     python3 tools/switch/nro_console_verify.py [--ip IP] [--port PORT] [--run-id ID]

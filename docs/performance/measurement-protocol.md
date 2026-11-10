@@ -1,6 +1,6 @@
 # Measurement Protocol
 
-Purpose: compare one module-level hypothesis in the **same** game state. Historical numbers from `docs/port-journal.md` §Measurements and `docs/culling-solutions-log.md` are context, not rows in the new baseline. Do not compare different clocks, scenes, saves or shader-cache states as an A/B result.
+Purpose: compare one module-level hypothesis in the **same** game state. Historical numbers from `docs/archive/port-journal.md` §Measurements and `docs/archive/culling-solutions-log.md` are context, not rows in the new baseline. Do not compare different clocks, scenes, saves or shader-cache states as an A/B result.
 
 ## Predeclare a run
 
@@ -31,4 +31,4 @@ For each module experiment, declare one primary metric, expected direction and s
 
 Start with pilot repeats of one frozen scenario to estimate natural spread and checkpoint drift. Set the number of confirmation repeats and the effect-size rule from that spread; the number is **TBD**, not an arbitrary universal constant. Keep every valid and invalid run, with reasons. Compare within-scenario medians and spread (range/IQR or bootstrap interval when enough independent repeats exist); show every run ID. A run is invalid if its initial state, route checkpoints, clocks, resolution, shader-cache class or measured segment differs from the declared configuration. Investigate outliers; never silently delete them.
 
-**Steady state:** prewarm until shader/pipeline creation and cache activity settle under a documented rule, then start at the declared game event. Run a separate cold-start experiment when startup hitches matter. The threshold for “settled” is TBD after pilot logs. Stock and overclocked data are separate configurations (`docs/port-journal.md` §Measurements; `rex_profile.log` clocks line).
+**Steady state:** prewarm until shader/pipeline creation and cache activity settle under a documented rule, then start at the declared game event. Run a separate cold-start experiment when startup hitches matter. The threshold for “settled” is TBD after pilot logs. Stock and overclocked data are separate configurations (`docs/archive/port-journal.md` §Measurements; `rex_profile.log` clocks line).

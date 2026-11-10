@@ -1,32 +1,29 @@
 # Evidence-Based Roadmap
 
-Statuses as of 2026-11-02: documentation audit exists; clean build, canonical scenarios and new baseline are **not verified**. Sources: `docs/project/current-state.md`; `PORT_DEV_LOG.md`. Each stage is complete only with its listed artifact/evidence, not because a related script exists.
+Statuses as of 2026-11-09. Current facts live in `STATE.md`; this file tracks stages only. A stage is complete when its evidence exists, not when a related script exists. Each change of status cites a Run ID, commit or file.
 
-| Stage | Goal and prerequisites | Deliverables and tasks | Completion evidence | Risk / owner question | Status |
-|---|---|---|---|---|---|
-| A. Source snapshot / clean build | Base tag and own game data | Build manifest, hashes, toolchain digest; reproduce NRO without replacing release artifacts | Build ID and matching/explicitly different hash; launch record | Published 0.1.4 artifact identity? | Not started |
-| B. Architecture / owners | A source inventory | Map each layer, vendored revision and local modifications | Reviewed subsystem map with source evidence | Which generic fixes go upstream? | Draft map |
-| C. Quality scope | Owner intent and A facts | Matrix of modes, behavior and TBD thresholds | Owner-approved criteria after baseline | Required docked/DLC scope? Four-core forwarder is already required | Draft goals |
-| D. Scenarios / replay | A plus candidate saves | Frozen initial states, route/checkpoint definitions, replay pilot | Repeated checkpoint-matching runs | Save vs reset; replay clock? | Not started |
-| E. Baseline / diagnosis | C/D and sufficient telemetry | Immutable Run IDs, spread, CPU/GPU/memory/wait classification | Comparable repeated runs for required modes | Missing frame-time stream? | Not started |
-| F. Measured optimization | E and one falsifiable hypothesis | Small change, A/B, regression report, ADR if architectural | Primary metric improves beyond noise; guardrails pass | Rewrite only after evidence | Not started |
-| G. Full regression / stability | F or baseline candidate | Coverage checklist, long sessions, crash/save/audio review | No unresolved agreed-gate failures | Full-game coverage and session length? | Not started |
-| H. Package / release | G and owner approval | Hash-bound NRO/shaders/installer manifest and notes | Installed package matches approved Build ID | Release authorization? | Not started |
+| Stage | Goal | Completion evidence | Status (evidence) |
+|---|---|---|---|
+| A. Build identity | Reproducible NRO with recorded toolchain | Toolchain digest, NRO hash, Build ID per run | **Partial.** Toolchain recorded (`docs/project/toolchain.md`); candidate NRO hash in `STATE.md`. Missing: published 0.1.5 hash, NRO/TOML hash inside run reports |
+| B. Architecture / owners | Module map with upstream boundary | Reviewed `docs/architecture/subsystem-map.md` | **Draft.** SDK changes in `7509546` still lack an upstream/local decision |
+| C. Quality scope | Owner thresholds and coverage | Owner-approved criteria | **Not started** (`docs/project/quality-goals.md`: all TBD) |
+| D. Scenarios | Frozen save, route, camera, checkpoints | Repeated checkpoint-matching runs | **Partial.** Village view spot used repeatedly; save/route not frozen (`docs/performance/scenarios.md`) |
+| E. Baseline / telemetry | Run ID markers, interval stats, repeatable spread | ≥3 identical runs per scenario with spread | **Partial.** Run ID markers, guest/present intervals and FTP collector work on console (`pilot-village-view-003`, `run-gpu-opt-008`); no repeated identical runs; Main CPU% semantics unknown |
+| F. Measured optimization | One hypothesis per task with A/B | Task file + control and candidate Run IDs | **In progress, non-compliant history.** 0.1.5 and `7509546` bundled several changes without A/B; T001 (`docs/tasks/T001-verify-7509546.md`) is the first compliant task |
+| G. Regression / stability | Long sessions, crash/save/audio review | Coverage checklist without blocking failures | **Not started** |
+| H. Package / release | Hash-bound NRO, shaders, installer | Installed package matches approved Build ID | 0.1.5 published; release notes overstate FPS (`STATE.md` §Corrected claims) |
 
-## First issues, dependency order
+## Ordered issues
 
-1. `build-identity`: obtain published 0.1.4 NRO hash, exact CMake/toolchain/PGO/shader identity (A; blocker).
-2. `clean-build`: reproduce a separate NRO and document any hash difference and launch result (A; depends on 1 and own data).
-3. `ownership-review`: inventory ReXGlue/Renut/plume revisions and project patches; validate map (B).
-4. `scenario-state`: locate/hash the owner's save near the sub-30-FPS hotspot; freeze route, camera and checkpoint first, then choose fight and save/load controls (D; owner input; `docs/performance/scenarios.md`).
-5. `replay-pilot`: test existing PC and Switch paths for checkpoint drift, input-clock/loading behavior (D; depends on 4).
-6. `console-log-output`: memory-only FTP collector and compact Markdown report are implemented; four window-join tests pass and old console logs yield `pending`; validate against a measured console run (E; `tools/switch/ftp_run_summary.py`).
-7. `run-markers`: opt-in Run ID, FTP start marker, segment start/end, guest-frame ordinals and common system ticks in CPU and Renut windows are implemented; verify on console (E; `frame_stats.cpp`, `device.cpp`, `banjo_renut_tuning.cpp`, `switch_perf.cpp`).
-8. `frame-intervals`: bounded in-memory guest-Swap/host-present interval statistics and 1% low are implemented in a locally linked diagnostic NRO; validate event semantics and telemetry overhead on console. Export a raw numeric stream only if a named diagnostic needs per-frame attribution (E; `docs/project/measurement-build-2026-11-02.md`).
-9. `simulation-checkpoint`: expose an independent game-clock/checkpoint marker and test route drift against wall time (D/E; depends on 5 and 7).
-10. `baseline-handheld`: run cold and warm stock handheld scenarios with pilot repeats and spread report using the metric catalog's low-overhead set (E; depends on 1, 4, 6–9).
-11. `quality-decision`: owner sets numerical thresholds and required coverage from baseline (C/E; depends on 10).
-12. `baseline-docked`: repeat approved suite at documented docked stock conditions (E; depends on 11 if docked required).
-13. `first-bottleneck-ADR`: align main/render/GPU/wait data, choose one failing module metric and a falsifiable A/B test; enable stack or GPU work-by-kind profiling only if needed (F; depends on baseline).
+1. `T001-verify-7509546`: run `run-gpu-opt-009` against control `run-gpu-opt-008` (F; owner run).
+2. `cpu-metric-semantics`: define "Main CPU%" and fix or relabel values above 100% (E; `sdk/src/ui/switch_perf.cpp`).
+3. `run-identity-in-report`: record NRO and TOML SHA-256 in each run report (A/E; `tools/switch/ftp_run_summary.py`).
+4. `noise-floor`: three identical runs of one build at one spot to measure spread (E; depends on 2–3).
+5. `split-7509546`: depending on T001, split into SDK and app commits and A/B each part (F; owner decision).
+6. `scenario-freeze`: freeze the save, route and camera for `village-view-v1` (D; owner input).
+7. `pgo-refresh`: regenerate the PGO profile after the code stabilizes (A; changes binary identity).
+8. `deps-update`: evaluate ReXGlue v0.10.1 and sa2-nx v1.0.6 against local patches (B; after baseline; `docs/project/toolchain.md`).
+9. `quality-decision`: owner sets thresholds from the baseline (C).
+10. `docked-baseline`, `stability-suite` (E/G; after 9).
 
-**Blocking unknowns:** exact release artifact, FTP upload procedure and installed-file identity, console setup and game-data validation, canonical initial save/route, equivalence of replay paths under the forwarder, shared cross-log markers, durable present intervals and independent game-clock drift, and owner decisions on mandatory modes/coverage. Do not schedule a renderer or SDK rewrite before these are resolved.
+**Rule:** no renderer or SDK rewrite before stages D and E produce repeatable evidence and an ADR compares alternatives.

@@ -70,7 +70,7 @@ report anything odd in long sessions. A ready-made forwarder is not shipped (an 
   renderer frames, its profile and crash reports to the PC, and exits by itself.
 - **Ground shadows**: the game's polygon offset (depth bias) was ignored by Renut, which cut decal shadows into wedges.
 
-The full story, with evidence for every step, is in [docs/port-journal.md](docs/port-journal.md).
+The full story, with evidence for every step, is in [docs/archive/port-journal.md](docs/archive/port-journal.md).
 
 ## Screenshots
 
